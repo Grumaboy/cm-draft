@@ -32,6 +32,8 @@ button{cursor:pointer}
 .tab:hover{color:var(--fg)}
 .tab.on{color:var(--fg);border-bottom-color:var(--gold);background:color-mix(in srgb,var(--gold) 8%,transparent)}
 .nav-hint{align-self:center;font-size:13px;color:var(--muted)}
+.nav-btn{margin-left:auto;align-self:center;background:var(--gold);color:#1b1306;border:0;border-radius:4px;padding:7px 14px;font-family:var(--f-disp);font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase}
+.nav-btn.ok{background:none;color:var(--good);border:1px solid var(--good)}
 .turn.opp{border-color:var(--dire)}
 .turn.opp .who{color:var(--dire)}
 /* top bar */
@@ -202,6 +204,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
       <button class="tab" data-mode="manual" role="tab">Турнир</button>
     </div>
     <span class="nav-hint" id="navHint">драфт против компьютера</span>
+    <button class="nav-btn" id="stratzNav">Подключить STRATZ</button>
   </div>
 </nav>
 <div class="wrap">
@@ -743,9 +746,21 @@ function evalHero(id,team){
   return {total,meta:h.meta,role,syn,ctr,thr,need,offrole:d<0};
 }
 const banValue=(id,team)=>evalHero(id,other(team)).total;
+/* какие позиции у команды ещё свободны и встаёт ли герой на одну из них */
+function offCount(ids,map){return ids.reduce((s,x,k)=>s+(fit(HEROES[x],map[k])<0?1:0),0)}
+function openPositions(team){const m=bestAssign(picks(team)).map;return [1,2,3,4,5].filter(p=>!m.includes(p))}
+function roleInfo(id,team){
+  const allies=picks(team), before=bestAssign(allies), after=bestAssign([...allies,id]);
+  const moved=allies.map((x,k)=>before.map[k]!==after.map[k]?HEROES[x].ab+" → "+after.map[k]:null).filter(Boolean);
+  return {ok: offCount([...allies,id],after.map)<=offCount(allies,before.map), pos: after.map[allies.length], moved};
+}
 function scoreAll(team,act){
   const un=unavailable();
-  return HEROES.filter(h=>!un.has(h.id)).map(h=>({id:h.id,v:act==="P"?evalHero(h.id,team).total:banValue(h.id,team)})).sort((a,b)=>b.v-a.v);
+  const target = act==="P" ? team : other(team);           // для бана смотрим роли соперника
+  const all=HEROES.filter(h=>!un.has(h.id));
+  let pool=all;
+  if(picks(target).length){ const f=all.filter(h=>roleInfo(h.id,target).ok); if(f.length) pool=f; }
+  return pool.map(h=>({id:h.id,v:act==="P"?evalHero(h.id,team).total:banValue(h.id,team)})).sort((a,b)=>b.v-a.v);
 }
 function shortReason(id,team,act){
   if(act==="B"){
@@ -946,8 +961,12 @@ function renderHints(){
   const title = team==="P"
     ? (act==="B"?(MAN()?"Что нам банить":"Кого банить"):(MAN()?"Что нам брать":"Кого пикать"))
     : (act==="B"?"Что скорее всего забанят":"Что скорее всего возьмут");
-  const sub = team==="A" ? `<p class="muted" style="margin:0">Прогноз по модели. Поставь фактический ${act==="B"?"бан":"пик"} соперника.</p>` : "";
-  el.innerHTML=`<h4>${title}</h4>${sub}<div class="hints">${list.map(x=>`<button class="hint-row" data-id="${x.id}">${IMG(HEROES[x.id],"pimg")}<span class="r"><b style="color:var(--fg)">${esc(HEROES[x.id].name)}</b><br>${esc(shortReason(x.id,team,act))}</span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`;
+  const roleTeam = act==="P" ? team : other(team);
+  const open = openPositions(roleTeam);
+  const who = roleTeam==="P" ? (MAN()?"у нас":"у тебя") : (MAN()?"у соперника":"у компьютера");
+  const openTxt = picks(roleTeam).length ? `<p class="muted" style="margin:0">Свободные позиции ${who}: <b style="color:var(--fg)">${open.join(", ")||"—"}</b>${act==="B"?" — баним то, что может их закрыть":""}</p>` : "";
+  const sub = (team==="A" ? `<p class="muted" style="margin:0">Прогноз по модели. Поставь фактический ${act==="B"?"бан":"пик"} соперника.</p>` : "") + openTxt;
+  el.innerHTML=`<h4>${title}</h4>${sub}<div class="hints">${list.map(x=>`<button class="hint-row" data-id="${x.id}">${IMG(HEROES[x.id],"pimg")}<span class="r"><b style="color:var(--fg)">${esc(HEROES[x.id].name)}</b>${picks(roleTeam).length?(ri=>` <span class="tag" style="margin-left:4px">поз. ${ri.pos}${ri.moved.length?", "+esc(ri.moved.join(", ")):""}</span>`)(roleInfo(x.id,roleTeam)):""}<br>${esc(shortReason(x.id,team,act))}</span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`;
   el.querySelectorAll(".hint-row").forEach(b=>{
     b.onclick=()=>{S.sel=+b.dataset.id;renderPool();renderDetail()};
     b.ondblclick=()=>{S.sel=+b.dataset.id;playerConfirm()};
@@ -1081,6 +1100,7 @@ function renderStratzPanel(){
   const m=$("#stratzMsg"); if(!m) return;
   const has=!!szToken();
   $("#stratzBtn").textContent = SZ.status==="ok" ? "STRATZ ✓" : "Ключ STRATZ";
+  const nb=$("#stratzNav"); nb.textContent = SZ.status==="ok" ? "STRATZ ✓" : SZ.status==="fail" ? "STRATZ: ошибка" : has ? "STRATZ…" : "Подключить STRATZ"; nb.classList.toggle("ok",SZ.status==="ok");
   m.className = SZ.status==="ok"?"pos":SZ.status==="fail"?"neg":"muted";
   m.textContent = !has ? "Ключ не сохранён. Без него работают OpenDota и встроенная модель."
     : SZ.status==="loading" ? "Проверяю ключ и загружаю статистику…"
@@ -1088,7 +1108,9 @@ function renderStratzPanel(){
     : SZ.status==="fail" ? "Не получилось: "+SZ.msg+". Если ошибка про блокировку браузером, напиши мне — сделаем обходной вариант через прокси."
     : "";
 }
-$("#stratzBtn").onclick=()=>{const p=$("#stratzPanel");p.hidden=!p.hidden;renderStratzPanel()};
+function toggleStratz(open){const p=$("#stratzPanel");p.hidden=open===undefined?!p.hidden:!open;renderStratzPanel();if(!p.hidden){p.scrollIntoView({block:"start",behavior:"smooth"});$("#stratzKey").focus()}}
+$("#stratzBtn").onclick=()=>toggleStratz();
+$("#stratzNav").onclick=()=>toggleStratz(true);
 $("#stratzSave").onclick=()=>{const v=$("#stratzKey").value.trim(); if(!v){$("#stratzMsg").textContent="Вставь токен в поле.";return}
   try{localStorage.setItem(SZ_KEY,v)}catch(e){} $("#stratzKey").value=""; loadStratz(true)};
 $("#stratzRemove").onclick=()=>{try{localStorage.removeItem(SZ_KEY);localStorage.removeItem("sz_base")}catch(e){}
@@ -1098,4 +1120,6 @@ $("#stratzRemove").onclick=()=>{try{localStorage.removeItem(SZ_KEY);localStorage
   location.reload()};
 loadHeroStats(false);
 loadStratz(false);
+renderStratzPanel();
+if(location.hash==="#stratz") toggleStratz(true);
 </script>
