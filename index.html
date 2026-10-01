@@ -20,6 +20,9 @@ button{cursor:pointer}
 :focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .wrap{max-width:1500px;margin:0 auto;padding-inline:16px;padding-block:14px 40px;display:flex;flex-direction:column;gap:12px}
 
+.stz a{color:var(--gold)}
+.stz-row{display:flex;flex-wrap:wrap;gap:8px}
+.stz-row input{flex:1 1 260px;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:7px 10px}
 /* top navigation with mode tabs */
 .nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
 .nav-in{max-width:1500px;margin:0 auto;padding-inline:16px;display:flex;align-items:stretch;gap:8px 24px;flex-wrap:wrap}
@@ -214,10 +217,21 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
       <label class="chk"><input type="checkbox" id="setTimer"> Таймер</label>
       <label class="chk"><input type="checkbox" id="setHints" checked> Подсказки</label>
       <button class="btn" id="undoBtn">Отменить ход</button>
+      <button class="btn" id="stratzBtn">Ключ STRATZ</button>
       <button class="btn primary" id="newBtn">Новый драфт</button>
     </div>
   </div>
 
+  <section class="card stz" id="stratzPanel" hidden>
+    <h4>Подключение STRATZ</h4>
+    <p class="muted" style="margin:0">STRATZ даёт статистику ранга Divine–Immortal: на каких позициях реально играют героев, кто кого контрит и кто с кем лучше выигрывает вместе. Нужен твой личный ключ: войди на stratz.com через Steam, открой страницу <a href="https://stratz.com/api" target="_blank" rel="noopener">stratz.com/api</a> и скопируй токен. Ключ хранится только в этом браузере и отправляется только в STRATZ. Не публикуй его и не вставляй в код сайта.</p>
+    <div class="stz-row">
+      <input id="stratzKey" type="password" autocomplete="off" placeholder="Вставь токен STRATZ">
+      <button class="btn primary" id="stratzSave">Сохранить и проверить</button>
+      <button class="btn" id="stratzRemove">Удалить ключ</button>
+    </div>
+    <div id="stratzMsg" class="muted"></div>
+  </section>
   <div class="timeline" id="timeline"></div>
 
   <div class="board">
@@ -499,6 +513,7 @@ const CTR = Array.from({length:N},()=>new Float32Array(N));
 const SYN = Array.from({length:N},()=>new Float32Array(N));
 for(let i=0;i<N;i++)for(let j=0;j<N;j++){ if(i===j)continue; CTR[i][j]=sum(ctrRules(HEROES[i],HEROES[j])); SYN[i][j]=sum(synRules(HEROES[i],HEROES[j])); }
 const CTR_R = CTR.map(r=>Float32Array.from(r));
+const SYN_R = SYN.map(r=>Float32Array.from(r));
 
 /* ===== LIVE DATA (OpenDota) ===== */
 const OD="https://api.opendota.com/api";
@@ -515,10 +530,17 @@ function applyHeroStats(d){
     const pp=x.pro_pick||0, pb=x.pro_ban||0;
     const pwr=(( x.pro_win||0)+5)/(pp+10);
     const pres=(pp+pb)/maxPres;
-    h.live={wr:wr*100,games:p,pres,proPick:pp,proBan:pb,proWr:pp?(x.pro_win||0)/pp*100:null};
-    h.meta=+(((wr-0.5)*100)*0.5 + pres*3 + ((pwr-0.5)*100)*0.08).toFixed(2);
+    h.live={wr:wr*100,games:p,pres,pwr,proPick:pp,proBan:pb,proWr:pp?(x.pro_win||0)/pp*100:null};
+    recomputeMeta(h);
   });
 }
+function recomputeMeta(h){
+  const wr = h.sz ? h.sz.wr : h.live ? h.live.wr/100 : null;
+  if(wr==null) return;
+  const pres = h.live ? h.live.pres : 0, pwr = h.live ? h.live.pwr : 0.5;
+  h.meta=+(((wr-0.5)*100)*0.5 + pres*3 + ((pwr-0.5)*100)*0.08 + (h.live?0:h.pro)).toFixed(2);
+}
+function baseWr(id){const h=HEROES[id];return h.sz?h.sz.wr:h.live?h.live.wr/100:0.5}
 async function loadHeroStats(force){
   DATA.status="loading"; renderData();
   try{
@@ -531,12 +553,25 @@ async function loadHeroStats(force){
   renderData(); render();
 }
 function allPicked(){const r=new Set();Object.values(STATES).forEach(st=>st.draft.forEach((v,i)=>{if(v!=null&&v>=0&&ORDER[i].act==="P")r.add(v)}));return [...r]}
-function dataAdv(a,b){ // насколько a выигрывает у b, в процентных пунктах, по статистике
-  let w,g;
+function dataAdv(a,b){ // насколько a выигрывает у b, в процентных пунктах, по статистике (STRATZ приоритетнее)
+  let w,g,src;
+  const sa=SZ.vs[a]&&SZ.vs[a][b], sb=SZ.vs[b]&&SZ.vs[b][a];
   const ma=DATA.mu[a]&&DATA.mu[a][b], mb=DATA.mu[b]&&DATA.mu[b][a];
-  if(ma&&ma.g){w=ma.w;g=ma.g} else if(mb&&mb.g){w=mb.g-mb.w;g=mb.g} else return null;
+  if(sa&&sa.g){w=sa.w;g=sa.g;src="STRATZ"} else if(sb&&sb.g){w=sb.g-sb.w;g=sb.g;src="STRATZ"}
+  else if(ma&&ma.g){w=ma.w;g=ma.g;src="OpenDota"} else if(mb&&mb.g){w=mb.g-mb.w;g=mb.g;src="OpenDota"} else return null;
   const sh=(w+7.5)/(g+15);
-  return {pp:Math.max(-12,Math.min(12,(sh-0.5)*100)),raw:w/g*100,g};
+  return {pp:Math.max(-12,Math.min(12,(sh-0.5)*100)),raw:w/g*100,g,src};
+}
+function withAdv(a,b){ // насколько пара a+b выигрывает чаще, чем ожидается по силе героев
+  const x=(SZ.with[a]&&SZ.with[a][b])||(SZ.with[b]&&SZ.with[b][a]); if(!x||!x.g) return null;
+  const base=(baseWr(a)+baseWr(b))/2;
+  const sh=(x.w+20*base)/(x.g+20);
+  return {pp:Math.max(-10,Math.min(10,(sh-base)*100)),raw:x.w/x.g*100,g:x.g};
+}
+function updateSyn(a,b){
+  const d=withAdv(a,b); if(!d){SYN[a][b]=SYN_R[a][b];SYN[b][a]=SYN_R[b][a];return}
+  const wd=0.85*d.g/(d.g+40), v=d.pp*0.3;
+  SYN[a][b]=(1-wd)*SYN_R[a][b]+wd*v; SYN[b][a]=(1-wd)*SYN_R[b][a]+wd*v;
 }
 function updatePair(a,b){
   const d=dataAdv(a,b); if(!d){CTR[a][b]=CTR_R[a][b];return}
@@ -556,14 +591,84 @@ async function loadMatchups(id,force){
   }catch(e){}
   DATA.pending.delete(id); renderData(); render();
 }
-function dataNote(a,b){const d=dataAdv(a,b);return d?`статистика: ${d.raw.toFixed(0)}% побед в ${d.g} играх`:""}
+function dataNote(a,b){const d=dataAdv(a,b);return d?`${d.src}: ${d.raw.toFixed(0)}% побед в ${d.g} играх`:""}
+function synNote(a,b){const d=withAdv(a,b);return d?`STRATZ: вместе ${d.raw.toFixed(0)}% в ${d.g} играх (${d.pp>=0?"+":""}${d.pp.toFixed(1)} к ожиданию)`:""}
+
+/* ===== STRATZ (по личному ключу пользователя) ===== */
+const SZ_URL="https://api.stratz.com/graphql", SZ_KEY="stratz_token", SZ_BR="DIVINE_IMMORTAL";
+const SZ={status:"off",msg:"",id:{},rev:{},vs:{},with:{},pending:new Set(),updated:null};
+const szToken=()=>{try{return localStorage.getItem(SZ_KEY)||""}catch(e){return ""}};
+async function szQuery(query,variables){
+  const tok=szToken(); if(!tok) throw new Error("нет ключа");
+  let r;
+  try{ r=await fetch(SZ_URL,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok},body:JSON.stringify({query,variables})}) }
+  catch(e){ throw new Error("браузер заблокировал запрос к STRATZ (сеть или CORS)") }
+  if(r.status===401||r.status===403) throw new Error("ключ не принят ("+r.status+")");
+  if(r.status===429) throw new Error("превышен лимит запросов STRATZ, попробуй позже");
+  if(!r.ok) throw new Error("ошибка STRATZ "+r.status);
+  const j=await r.json(); if(j.errors&&j.errors.length&&!j.data) throw new Error(j.errors[0].message);
+  return j.data;
+}
+const SZ_BASE_Q=`query($b:[RankBracketBasicEnum]){ constants{ heroes{ id displayName } } heroStats{ stats(bracketBasicIds:$b, groupByPosition:true){ heroId position matchCount winCount } } }`;
+const SZ_MU_Q=`query($h:Short!,$b:[RankBracketBasicEnum]){ heroStats{ matchUp(heroId:$h, bracketBasicIds:$b, take:200){ heroId vs{ heroId2 matchCount winCount } with{ heroId2 matchCount winCount } } } }`;
+function applySzBase(d){
+  (d.constants.heroes||[]).forEach(x=>{const id=BYNAME[x.displayName]; if(id!=null){SZ.id[x.id]=id;SZ.rev[id]=x.id}});
+  const agg={};
+  (d.heroStats.stats||[]).forEach(x=>{
+    const id=SZ.id[x.heroId]; if(id==null) return;
+    const pos=+String(x.position||"").replace("POSITION_",""); if(!(pos>=1&&pos<=5)) return;
+    const a=agg[id]||(agg[id]={g:0,w:0,p:{}}); a.g+=x.matchCount||0; a.w+=x.winCount||0; a.p[pos]=(a.p[pos]||0)+(x.matchCount||0);
+  });
+  Object.entries(agg).forEach(([id,a])=>{
+    const h=HEROES[id]; if(!a.g) return;
+    const share={}; for(let p=1;p<=5;p++) share[p]=(a.p[p]||0)/a.g;
+    h.posShare=share;
+    h.pos=[1,2,3,4,5].filter(p=>share[p]>=0.08).sort((x,y)=>share[y]-share[x]);
+    if(!h.pos.length) h.pos=[ [1,2,3,4,5].sort((x,y)=>share[y]-share[x])[0] ];
+    h.sz={wr:(a.w+250)/(a.g+500),games:a.g};
+    recomputeMeta(h);
+  });
+}
+async function loadStratz(force){
+  if(!szToken()){SZ.status="off";renderData();renderStratzPanel();return}
+  SZ.status="loading"; renderData(); renderStratzPanel();
+  try{
+    let c=force?null:cacheGet("sz_base",6*3600e3), d=c&&c.d;
+    if(!d){d=await szQuery(SZ_BASE_Q,{b:[SZ_BR]});cacheSet("sz_base",d);c={t:Date.now()}}
+    applySzBase(d); SZ.status="ok"; SZ.updated=new Date(c.t); SZ.msg="";
+    if(force){SZ.vs={};SZ.with={}}
+    allPicked().forEach(id=>loadStratzMU(id,force));
+  }catch(e){SZ.status="fail";SZ.msg=e.message}
+  renderData(); render(); renderStratzPanel();
+}
+async function loadStratzMU(id,force){
+  if(SZ.status!=="ok"||SZ.rev[id]==null||(SZ.vs[id]&&!force)||SZ.pending.has(id)) return;
+  SZ.pending.add(id); renderData();
+  try{
+    const sid=SZ.rev[id];
+    let c=force?null:cacheGet("sz_mu_"+sid,12*3600e3), d=c&&c.d;
+    if(!d){d=await szQuery(SZ_MU_Q,{h:sid,b:[SZ_BR]});cacheSet("sz_mu_"+sid,d)}
+    const vs={},wi={};
+    (d.heroStats.matchUp||[]).forEach(m=>{
+      if(m.heroId!==sid) return;
+      (m.vs||[]).forEach(x=>{const j=SZ.id[x.heroId2]; if(j!=null) vs[j]={g:x.matchCount,w:x.winCount}});
+      (m.with||[]).forEach(x=>{const j=SZ.id[x.heroId2]; if(j!=null) wi[j]={g:x.matchCount,w:x.winCount}});
+    });
+    SZ.vs[id]=vs; SZ.with[id]=wi;
+    for(let j=0;j<N;j++){ if(j!==id){updatePair(id,j);updatePair(j,id);updateSyn(id,j)} }
+  }catch(e){SZ.msg=e.message}
+  SZ.pending.delete(id); renderData(); render(); renderStratzPanel();
+}
 function renderData(){
   const el=document.getElementById("dataStatus"), btn=document.getElementById("dataReload"); if(!el) return;
   el.className=DATA.status==="ok"?"ok":DATA.status==="fail"?"fail":"";
   const n=Object.keys(DATA.mu).length, p=DATA.pending.size;
-  el.textContent = DATA.status==="loading" ? "загружаю статистику OpenDota…"
-    : DATA.status==="ok" ? `статистика OpenDota на ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})} · матчапы: ${n} героев${p?" (грузятся ещё "+p+")":""}`
-    : DATA.status==="fail" ? "нет связи с OpenDota — работает встроенная модель" : "статистика не загружена";
+  const od = DATA.status==="loading" ? "OpenDota: загрузка…"
+    : DATA.status==="ok" ? `OpenDota ✓ ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}${p?" (матчапы грузятся: "+p+")":""}`
+    : DATA.status==="fail" ? "нет связи с OpenDota — встроенная модель" : "статистика не загружена";
+  const sz = SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
+    : SZ.status==="loading" ? " · STRATZ: загрузка…" : SZ.status==="fail" ? " · STRATZ: ошибка" : " · STRATZ не подключён";
+  el.textContent = od+sz;
   btn.hidden = DATA.status==="loading";
   btn.textContent = DATA.status==="fail" ? "повторить" : "обновить";
 }
@@ -594,7 +699,9 @@ function unavailable(){return new Set(S.draft.filter(x=>x!=null&&x>=0))}
 
 /* ===== EVALUATION ===== */
 const POSFIT=[3,2,1.2,0.8];
-const fit=(h,p)=>{const i=h.pos.indexOf(p);return i<0?-4:(POSFIT[i]??0.8)};
+const fit=(h,p)=>{
+  if(h.posShare){const s=h.posShare[p]||0;return s>=0.45?3:s>=0.2?2:s>=0.08?1.2:-4}
+  const i=h.pos.indexOf(p);return i<0?-4:(POSFIT[i]??0.8)};
 function bestAssign(ids){
   if(!ids.length) return {score:0,map:[]};
   let best=-1e9,bestMap=null;const used=[0,0,0,0,0,0],cur=[];
@@ -688,7 +795,7 @@ function commit(id,team){
   const g = ((team==="P"||MAN()) && id>=0) ? gradeOf(id,team,act) : null;
   S.draft[i]=id; S.step++; S.sel=null;
   S.log.push({i,team,act,id,g});
-  if(act==="P"&&id>=0) loadMatchups(id);
+  if(act==="P"&&id>=0){ loadMatchups(id); loadStratzMU(id); }
   S.stepLeft=done()?0:STEP_TIME(S.step);
   render(); scheduleAI();
 }
@@ -810,13 +917,13 @@ function renderDetail(){
   const myTurn=!!myAct(), act=done()?"P":ORDER[S.step].act, forOpp=MAN()&&!done()&&teamOfStep(S.step)==="A";
   const me=picks("P"),en=picks("A");
   const reasons=(rs)=>rs.sort((a,b)=>b[0]-a[0]).map(x=>x[1]).join(", ");
-  const synR=me.map(a=>[a,SYN[id][a],reasons(synRules(h,HEROES[a]))]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
+  const synR=me.map(a=>[a,SYN[id][a],[synNote(id,a),reasons(synRules(h,HEROES[a]))].filter(Boolean).join("; ")]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
   const withData=(r,a,b)=>[dataNote(a,b),r].filter(Boolean).join("; ");
   const ctrR=en.map(e=>[e,CTR[id][e],withData(reasons(ctrRules(h,HEROES[e])),id,e)]).filter(x=>x[1]>=0.3).sort((a,b)=>b[1]-a[1]);
   const thrR=en.map(e=>[e,-CTR[e][id],withData(reasons(ctrRules(HEROES[e],h)),e,id)]).filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]);
   const eP=evalHero(id,"P"), eA=evalHero(id,"A");
   const attrName=ATTR.find(a=>a[0]===h.attr);
-  el.innerHTML=`<div class="dh"><span class="big">${esc(h.name)}</span><span class="meta" style="color:var(${attrName[2]})">${attrName[1]}</span><span class="meta">${h.ranged?"дальний бой":"ближний бой"} · позиции ${h.pos.join(", ")} · ${h.live?`Divine+ WR ${h.live.wr.toFixed(1)}% · про: ${h.live.proPick} пиков, ${h.live.proBan} банов${h.live.proWr!=null&&h.live.proPick>=5?", WR "+h.live.proWr.toFixed(0)+"%":""}`:`паб WR ${h.wr.toFixed(1)}%${h.pro?" · про-приоритет":""}`}</span></div>
+  el.innerHTML=`<div class="dh"><span class="big">${esc(h.name)}</span><span class="meta" style="color:var(${attrName[2]})">${attrName[1]}</span><span class="meta">${h.ranged?"дальний бой":"ближний бой"} · позиции ${h.posShare?h.pos.map(p=>p+" ("+Math.round(h.posShare[p]*100)+"%)").join(", "):h.pos.join(", ")} · ${h.sz?`Divine+ WR ${(h.sz.wr*100).toFixed(1)}% (STRATZ) · `:""}${h.live?`${h.sz?"":"Divine+ WR "+h.live.wr.toFixed(1)+"% · "}про: ${h.live.proPick} пиков, ${h.live.proBan} банов${h.live.proWr!=null&&h.live.proPick>=5?", WR "+h.live.proWr.toFixed(0)+"%":""}`:`паб WR ${h.wr.toFixed(1)}%${h.pro?" · про-приоритет":""}`}</span></div>
   <div class="tags">${[...h.t].map(k=>`<span class="tag">${TAG_RU[k]||k}</span>`).join("")}</div>
   <div class="cols3">
     <div class="rel"><div class="sub">С ${L().our} пиками</div>${relList(synR,"")}</div>
@@ -969,6 +1076,26 @@ $("#undoBtn").onclick=undo;
 $("#setHints").onchange=e=>{S.hints=e.target.checked;render()};
 $("#setTimer").onchange=e=>{S.timer=e.target.checked;S.stepLeft=STEP_TIME(S.step);renderTurn()};
 newDraft();
-$("#dataReload").onclick=()=>loadHeroStats(true);
+$("#dataReload").onclick=()=>{loadHeroStats(true);loadStratz(true)};
+function renderStratzPanel(){
+  const m=$("#stratzMsg"); if(!m) return;
+  const has=!!szToken();
+  $("#stratzBtn").textContent = SZ.status==="ok" ? "STRATZ ✓" : "Ключ STRATZ";
+  m.className = SZ.status==="ok"?"pos":SZ.status==="fail"?"neg":"muted";
+  m.textContent = !has ? "Ключ не сохранён. Без него работают OpenDota и встроенная модель."
+    : SZ.status==="loading" ? "Проверяю ключ и загружаю статистику…"
+    : SZ.status==="ok" ? `Подключено. Роли героев и мета по Divine–Immortal загружены${SZ.msg?"; последняя ошибка матчапов: "+SZ.msg:""}. Матчапы и синергии подгружаются для каждого пика.`
+    : SZ.status==="fail" ? "Не получилось: "+SZ.msg+". Если ошибка про блокировку браузером, напиши мне — сделаем обходной вариант через прокси."
+    : "";
+}
+$("#stratzBtn").onclick=()=>{const p=$("#stratzPanel");p.hidden=!p.hidden;renderStratzPanel()};
+$("#stratzSave").onclick=()=>{const v=$("#stratzKey").value.trim(); if(!v){$("#stratzMsg").textContent="Вставь токен в поле.";return}
+  try{localStorage.setItem(SZ_KEY,v)}catch(e){} $("#stratzKey").value=""; loadStratz(true)};
+$("#stratzRemove").onclick=()=>{try{localStorage.removeItem(SZ_KEY);localStorage.removeItem("sz_base")}catch(e){}
+  SZ.status="off";SZ.vs={};SZ.with={};
+  for(let i=0;i<N;i++){CTR[i].set(CTR_R[i]);SYN[i].set(SYN_R[i])}
+  Object.keys(DATA.mu).forEach(k=>{const id=+k;for(let j=0;j<N;j++)if(j!==id){updatePair(id,j);updatePair(j,id)}});
+  location.reload()};
 loadHeroStats(false);
+loadStratz(false);
 </script>
