@@ -20,6 +20,13 @@ button{cursor:pointer}
 :focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .wrap{max-width:1500px;margin:0 auto;padding-inline:16px;padding-block:14px 40px;display:flex;flex-direction:column;gap:12px}
 
+/* mode tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:8px 14px;font-family:var(--f-disp);font-weight:600;font-size:17px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:-1px}
+.tab.on{color:var(--fg);border-bottom-color:var(--gold)}
+.tab small{font-family:var(--f-body);font-weight:500;font-size:12px;text-transform:none;letter-spacing:0;margin-left:6px;color:var(--muted)}
+.turn.opp{border-color:var(--dire)}
+.turn.opp .who{color:var(--dire)}
 /* top bar */
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
 .brand{font-family:var(--f-disp);font-weight:700;font-size:26px;letter-spacing:.04em;text-transform:uppercase;line-height:1}
@@ -137,10 +144,11 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
 .score b{color:var(--fg);font-weight:500}
 .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .hints{display:flex;flex-direction:column;gap:5px}
-.hint-row{display:grid;grid-template-columns:52px minmax(0,1fr) 44px;gap:8px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 8px;text-align:left}
+.hint-row{display:grid;grid-template-columns:auto minmax(0,1fr) 40px;gap:8px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 8px;text-align:left}
 .hint-row:hover{border-color:var(--gold)}
 .hint-row .ab{font-family:var(--f-disp);font-weight:700;font-size:16px}
-.hint-row .r{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hint-row .r{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.hint-row .r b{font-size:13px}
 .hint-row .v{font-family:var(--f-mono);font-size:12px;text-align:right;color:var(--gold)}
 .log{display:flex;flex-direction:column;gap:3px;font-size:13px;max-height:220px;overflow:auto}
 .log .l{display:grid;grid-template-columns:24px 1fr auto;gap:6px}
@@ -194,6 +202,10 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     </div>
   </div>
 
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-mode="ai" role="tab">Тренировка<small>против компьютера</small></button>
+    <button class="tab" data-mode="manual" role="tab">Турнир<small>ручной драфт за обе команды</small></button>
+  </div>
   <div class="timeline" id="timeline"></div>
 
   <div class="board">
@@ -482,11 +494,15 @@ const STEP_TIME = i=> i<7?15:30;
 const RESERVE = 130;
 
 /* ===== STATE ===== */
-const S = {
+const makeState=()=>({
   playerSide:"rad", playerFirst:true, diff:"normal", timer:false, hints:true,
   draft:Array(24).fill(null), step:0, sel:null, log:[], history:[],
   stepLeft:15, reserve:{P:RESERVE,A:RESERVE}, aiTimer:null, filterPos:0, search:""
-};
+});
+const STATES={ai:makeState(),manual:makeState()};
+let MODE="ai", S=STATES.ai;
+const MAN=()=>MODE==="manual";
+const L=()=>MAN()?{me:"Мы",opp:"Соперник",meTag:"МЫ",oppTag:"соперник",our:"нашими",ours:"наших"}:{me:"Ты",opp:"ИИ",meTag:"ТЫ",oppTag:"компьютер",our:"твоими",ours:"твоих"};
 const teamOfStep = i => (ORDER[i].side==="F") === S.playerFirst ? "P" : "A";
 const sideOf = t => t==="P"? S.playerSide : (S.playerSide==="rad"?"dire":"rad");
 const other = t => t==="P"?"A":"P";
@@ -545,12 +561,12 @@ function scoreAll(team,act){
 }
 function shortReason(id,team,act){
   if(act==="B"){
-    const opp=other(team),e=evalHero(id,opp),bits=[];
-    if(e.syn>1) bits.push("связка у соперника");
-    if(e.ctr>1) bits.push("контрит твоих");
+    const opp=other(team),e=evalHero(id,opp),bits=[],us=team==="P";
+    if(e.syn>1) bits.push(us?"связка у соперника":"наша связка");
+    if(e.ctr>1) bits.push(us?"контрит "+L().ours:"контрит их пики");
     if(e.meta>1.2) bits.push("сильная мета");
-    if(e.need.length) bits.push("закрывает дыру соперника");
-    return bits.join(" · ")||"сильный герой для соперника";
+    if(e.need.length) bits.push(us?"закрывает дыру соперника":"закрывает нашу дыру");
+    return bits.join(" · ")||(us?"сильный герой для соперника":"сильный герой для нас");
   }
   const e=evalHero(id,team),bits=[];
   const allies=picks(team),enemies=picks(other(team));
@@ -574,8 +590,8 @@ function aiChoose(){
 }
 function scheduleAI(){
   clearTimeout(S.aiTimer);
-  if(done()||teamOfStep(S.step)!=="A") return;
-  S.aiTimer=setTimeout(()=>{ if(!done()&&teamOfStep(S.step)==="A") commit(aiChoose(),"A") }, 750);
+  if(MAN()||done()||teamOfStep(S.step)!=="A") return;
+  S.aiTimer=setTimeout(()=>{ if(!MAN()&&!done()&&teamOfStep(S.step)==="A") commit(aiChoose(),"A") }, 750);
 }
 
 /* ===== ACTIONS ===== */
@@ -587,17 +603,19 @@ function gradeOf(id,team,act){
 }
 function commit(id,team){
   const i=S.step, act=ORDER[i].act;
-  if(team==="P") S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve}));
-  const g = (team==="P" && id>=0) ? gradeOf(id,team,act) : null;
+  if(team==="P"||MAN()) S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve}));
+  const g = ((team==="P"||MAN()) && id>=0) ? gradeOf(id,team,act) : null;
   S.draft[i]=id; S.step++; S.sel=null;
   S.log.push({i,team,act,id,g});
   S.stepLeft=done()?0:STEP_TIME(S.step);
   render(); scheduleAI();
 }
 function playerConfirm(){
-  if(done()||teamOfStep(S.step)!=="P"||S.sel==null) return;
+  if(done()||S.sel==null) return;
+  const t=teamOfStep(S.step);
+  if(t!=="P"&&!MAN()) return;
   if(unavailable().has(S.sel)) return;
-  commit(S.sel,"P");
+  commit(S.sel,t);
 }
 function undo(){
   if(!S.history.length) return;
@@ -610,7 +628,7 @@ function newDraft(){
   clearTimeout(S.aiTimer);
   S.playerSide=$("#setSide").value; S.diff=$("#setDiff").value;
   const o=$("#setOrder").value; S.playerFirst=o==="first"?true:o==="second"?false:Math.random()<.5;
-  S.timer=$("#setTimer").checked;
+  S.timer=!MAN()&&$("#setTimer").checked;
   S.draft=Array(24).fill(null);S.step=0;S.sel=null;S.log=[];S.history=[];
   S.reserve={P:RESERVE,A:RESERVE};S.stepLeft=STEP_TIME(0);
   render(); scheduleAI();
@@ -618,7 +636,7 @@ function newDraft(){
 
 /* timer */
 setInterval(()=>{
-  if(!S.timer||done()||teamOfStep(S.step)!=="P") return;
+  if(MAN()||!S.timer||done()||teamOfStep(S.step)!=="P") return;
   if(S.stepLeft>0) S.stepLeft=Math.max(0,S.stepLeft-0.25);
   else S.reserve.P=Math.max(0,S.reserve.P-0.25);
   if(S.stepLeft<=0&&S.reserve.P<=0){
@@ -662,8 +680,8 @@ function teamHTML(side){
   const p=profile(ps);
   const m=(l,v,max)=>`<div class="meter"><span>${l}</span><span class="bar"><i style="width:${Math.min(100,v/max*100)}%"></i></span><b>${+v.toFixed(1)}</b></div>`;
   const first = (team==="P")===S.playerFirst;
-  const dz = k => team==="P" ? ` dz" data-zone="${k}` : "";
-  return `<h2>${side==="rad"?"Radiant":"Dire"} <span>${team==="P"?'<span class="you">ТЫ</span>':"компьютер"} · ${first?"1-й пик":"2-й пик"}</span></h2>
+  const dz = k => (team==="P"||MAN()) ? ` dz" data-team="${team}" data-zone="${k}` : "";
+  return `<h2>${side==="rad"?"Radiant":"Dire"} <span>${team==="P"?'<span class="you">'+L().meTag+'</span>':L().oppTag} · ${first?"1-й пик":"2-й пик"}</span></h2>
   <div class="slots${dz("P")}">${slots.join("")}</div>
   <div class="sub">Баны</div><div class="bans${dz("B")}">${bl.join("")}</div>
   <div class="sub">Профиль драфта</div>
@@ -673,11 +691,16 @@ function renderTeams(){ $("#teamRad").innerHTML=teamHTML("rad"); $("#teamDire").
 
 function renderTurn(){
   const el=$("#turn");
-  if(done()){el.className="turn";el.innerHTML=`<span class="who">Драфт завершён</span><span class="phase">разбор ниже · «Отменить ход» вернёт тебя к последнему действию</span>`;return}
+  if(done()){el.className="turn";el.innerHTML=`<span class="who">Драфт завершён</span><span class="phase">разбор ниже · «Отменить ход» вернёт ${MAN()?"на шаг назад":"тебя к последнему действию"}</span>`;return}
   const team=teamOfStep(S.step),act=ORDER[S.step].act,mine=team==="P";
-  el.className="turn"+(mine?" mine":"");
-  const clock=S.timer?`<span class="clock">ход <b>${fmtT(mine?S.stepLeft:STEP_TIME(S.step))}</b> резерв <b>${fmtT(S.reserve.P)}</b></span>`:"";
-  el.innerHTML=`<span class="who">${mine?(act==="B"?"Твой бан":"Твой пик"):(act==="B"?"Компьютер банит…":"Компьютер пикает…")}</span><span class="phase">${PHASE(S.step)} · ход ${S.step+1} из 24</span>${clock}`;
+  el.className="turn"+(mine?" mine":MAN()?" opp":"");
+  const clock=S.timer&&!MAN()?`<span class="clock">ход <b>${fmtT(mine?S.stepLeft:STEP_TIME(S.step))}</b> резерв <b>${fmtT(S.reserve.P)}</b></span>`:"";
+  const who = MAN()
+    ? (mine?(act==="B"?"Наш бан":"Наш пик"):(act==="B"?"Бан соперника":"Пик соперника"))
+    : (mine?(act==="B"?"Твой бан":"Твой пик"):(act==="B"?"Компьютер банит…":"Компьютер пикает…"));
+  const skip = act==="B"&&myAct()?`<button class="btn" id="skipBtn" title="Если бан не был сделан (кончилось время)">Пропустить бан</button>`:"";
+  el.innerHTML=`<span class="who">${who}</span><span class="phase">${PHASE(S.step)} · ход ${S.step+1} из 24</span>${clock}${skip}`;
+  const sb=$("#skipBtn"); if(sb) sb.onclick=()=>{ if(myAct()==="B") commit(-1,teamOfStep(S.step)) };
 }
 
 function renderPool(){
@@ -702,7 +725,7 @@ function renderDetail(){
   if(id==null){
     el.innerHTML=`<h4>Герой</h4><p class="muted" style="margin:0">Нажми на героя, чтобы увидеть его связки с твоими пиками, кого он контрит и кто опасен для него. Двойной клик или Enter подтверждает выбор.</p>`;return}
   const h=HEROES[id], un=unavailable().has(id);
-  const myTurn=!done()&&teamOfStep(S.step)==="P", act=done()?"P":ORDER[S.step].act;
+  const myTurn=!!myAct(), act=done()?"P":ORDER[S.step].act, forOpp=MAN()&&!done()&&teamOfStep(S.step)==="A";
   const me=picks("P"),en=picks("A");
   const reasons=(rs)=>rs.sort((a,b)=>b[0]-a[0]).map(x=>x[1]).join(", ");
   const synR=me.map(a=>[a,SYN[id][a],reasons(synRules(h,HEROES[a]))]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
@@ -713,29 +736,37 @@ function renderDetail(){
   el.innerHTML=`<div class="dh"><span class="big">${esc(h.name)}</span><span class="meta" style="color:var(${attrName[2]})">${attrName[1]}</span><span class="meta">${h.ranged?"дальний бой":"ближний бой"} · позиции ${h.pos.join(", ")} · паб WR ${h.wr.toFixed(1)}%${h.pro?" · про-приоритет":""}</span></div>
   <div class="tags">${[...h.t].map(k=>`<span class="tag">${TAG_RU[k]||k}</span>`).join("")}</div>
   <div class="cols3">
-    <div class="rel"><div class="sub">С твоими пиками</div>${relList(synR,"")}</div>
+    <div class="rel"><div class="sub">С ${L().our} пиками</div>${relList(synR,"")}</div>
     <div class="rel"><div class="sub">Контрит врагов</div>${relList(ctrR,"pos")}</div>
     <div class="rel"><div class="sub">Опасны для него</div>${relList(thrR,"neg")}</div>
   </div>
-  <div class="score">для тебя <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
+  <div class="score">для ${MAN()?"нас":"тебя"} <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
   <div class="score">для соперника <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · ему не по ролям":""}</div>
-  <div class="actions">${un?`<span class="muted">Герой уже занят или забанен</span>`:myTurn?`<button class="btn primary" id="confirmBtn">${act==="B"?"Забанить":"Пикнуть"} ${esc(h.ab)}</button>`:`<span class="muted">Сейчас ход компьютера</span>`}</div>`;
+  <div class="actions">${un?`<span class="muted">Герой уже занят или забанен</span>`:myTurn?`<button class="btn primary" id="confirmBtn">${act==="B"?"Забанить":"Пикнуть"} ${esc(h.ab)}${forOpp?" за соперника":""}</button>`:`<span class="muted">Сейчас ход компьютера</span>`}</div>`;
   const cb=$("#confirmBtn"); if(cb) cb.onclick=playerConfirm;
 }
 
 function renderHints(){
   const el=$("#hintsCard");
   if(!S.hints){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Выключены. Включи галочку сверху, чтобы видеть топ вариантов и оценку каждого хода.</p>`;return}
-  if(done()||teamOfStep(S.step)!=="P"){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">${done()?"Драфт завершён.":"Появятся на твоём ходу."}</p>`;return}
-  const act=ORDER[S.step].act;
-  const list=scoreAll("P",act).slice(0,6);
-  el.innerHTML=`<h4>${act==="B"?"Кого банить":"Кого пикать"}</h4><div class="hints">${list.map(x=>`<button class="hint-row" data-id="${x.id}"><span class="ab">${esc(HEROES[x.id].ab)}</span><span class="r">${esc(shortReason(x.id,"P",act))}</span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`;
-  el.querySelectorAll(".hint-row").forEach(b=>b.onclick=()=>{S.sel=+b.dataset.id;renderPool();renderDetail()});
+  if(done()){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Драфт завершён.</p>`;return}
+  const team=teamOfStep(S.step),act=ORDER[S.step].act;
+  if(team!=="P"&&!MAN()){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Появятся на твоём ходу.</p>`;return}
+  const list=scoreAll(team,act).slice(0,team==="P"?8:6);
+  const title = team==="P"
+    ? (act==="B"?(MAN()?"Что нам банить":"Кого банить"):(MAN()?"Что нам брать":"Кого пикать"))
+    : (act==="B"?"Что скорее всего забанят":"Что скорее всего возьмут");
+  const sub = team==="A" ? `<p class="muted" style="margin:0">Прогноз по модели. Поставь фактический ${act==="B"?"бан":"пик"} соперника.</p>` : "";
+  el.innerHTML=`<h4>${title}</h4>${sub}<div class="hints">${list.map(x=>`<button class="hint-row" data-id="${x.id}">${IMG(HEROES[x.id],"pimg")}<span class="r"><b style="color:var(--fg)">${esc(HEROES[x.id].name)}</b><br>${esc(shortReason(x.id,team,act))}</span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`;
+  el.querySelectorAll(".hint-row").forEach(b=>{
+    b.onclick=()=>{S.sel=+b.dataset.id;renderPool();renderDetail()};
+    b.ondblclick=()=>{S.sel=+b.dataset.id;playerConfirm()};
+  });
 }
 
 function renderLog(){
   $("#log").innerHTML=S.log.length?S.log.map(e=>{
-    const who=e.team==="P"?"Ты":"ИИ", what=e.act==="B"?"бан":"пик", name=e.id<0?"пропуск":HEROES[e.id].name;
+    const who=e.team==="P"?L().me:L().opp, what=e.act==="B"?"бан":"пик", name=e.id<0?"пропуск":HEROES[e.id].name;
     const g=e.g?`<span class="grade ${e.g.cls}" title="Лучший вариант по модели: ${esc(HEROES[e.g.best].name)}">#${e.g.rank} ${e.g.txt}</span>`:"";
     return `<div class="l"><span class="n">${e.i+1}</span><span>${who} · ${what}: <b>${esc(name)}</b></span>${g}</div>`}).join(""):`<span class="muted">Пока пусто</span>`;
   const el=$("#log"); el.scrollTop=el.scrollHeight;
@@ -777,8 +808,8 @@ function renderAnalysis(){
   const graded=S.log.filter(e=>e.g);const avg=graded.length?graded.reduce((s,e)=>s+e.g.rank,0)/graded.length:0;
   w.innerHTML=`<div class="analysis"><div class="card verdict"><h4>Прогноз модели</h4>
     <div class="wbar"><div class="r" style="width:${(pr*100).toFixed(0)}%">Radiant ${(pr*100).toFixed(0)}%</div><div class="d" style="width:${(100-pr*100).toFixed(0)}%">${(100-pr*100).toFixed(0)}% Dire</div></div>
-    <div class="muted">Твоя сторона: ${sideOf("P")==="rad"?"Radiant":"Dire"}. Средний ранг твоих ходов по модели: ${avg?avg.toFixed(1):"—"} (1 = лучший вариант).</div></div>
-    <div class="ateams">${card(radT,"Radiant"+(sideOf("P")==="rad"?" · ты":""))}${card(dirT,"Dire"+(sideOf("P")==="dire"?" · ты":""))}</div></div>`;
+    <div class="muted">${MAN()?"Наша":"Твоя"} сторона: ${sideOf("P")==="rad"?"Radiant":"Dire"}. Средний ранг ${MAN()?"ходов (обеих команд)":"твоих ходов"} по модели: ${avg?avg.toFixed(1):"—"} (1 = лучший вариант).</div></div>
+    <div class="ateams">${card(radT,"Radiant"+(sideOf("P")==="rad"?(MAN()?" · мы":" · ты"):""))}${card(dirT,"Dire"+(sideOf("P")==="dire"?(MAN()?" · мы":" · ты"):""))}</div></div>`;
 }
 
 function render(){renderTimeline();renderTeams();renderTurn();renderPool();renderDetail();renderHints();renderLog();renderAnalysis();$("#undoBtn").disabled=!S.history.length}
@@ -791,10 +822,11 @@ $("#posChips").addEventListener("click",e=>{const c=e.target.closest(".chip");if
 
 /* drag & drop: hero tile -> your pick slots / ban slots / current timeline cell */
 let dragId=null;
-const myAct=()=> (!done()&&teamOfStep(S.step)==="P") ? ORDER[S.step].act : null;
+function myAct(){ return (!done()&&(MAN()||teamOfStep(S.step)==="P")) ? ORDER[S.step].act : null }
 function markZones(){
   const act=myAct();
-  document.querySelectorAll(".dz").forEach(z=>z.classList.toggle("ok",z.dataset.zone===act));
+  const ct=done()?null:teamOfStep(S.step);
+  document.querySelectorAll(".dz").forEach(z=>z.classList.toggle("ok",z.dataset.zone===act&&(!z.dataset.team||z.dataset.team===ct)));
   const cur=document.querySelector(".tl.cur"); if(cur){cur.classList.toggle("dz",!!act);cur.classList.toggle("ok",!!act);cur.dataset.zone=act||""}
 }
 function zoneAt(target){const z=target.closest&&target.closest(".dz.ok");return z&&dragId!=null?z:null}
@@ -830,6 +862,24 @@ $("#search").addEventListener("keydown",e=>{
   if(S.sel!=null) playerConfirm();
 });
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.tagName!=="INPUT"&&e.target.tagName!=="BUTTON"&&e.target.tagName!=="SELECT")playerConfirm()});
+function syncSettings(){
+  $("#setSide").value=S.playerSide; $("#setDiff").value=S.diff;
+  $("#setOrder").value=S.playerFirst?"first":"second";
+  $("#setTimer").checked=S.timer; $("#setHints").checked=S.hints;
+  $("#setDiff").disabled=MAN(); $("#setTimer").disabled=MAN();
+  $("#setSide").previousElementSibling.textContent=MAN()?"Наша сторона":"Сторона";
+  $("#setOrder").previousElementSibling.textContent=MAN()?"Мы пикаем":"Очерёдность";
+  $("#search").value=S.search;
+}
+function setMode(m){
+  if(m===MODE) return;
+  clearTimeout(STATES.ai.aiTimer);
+  MODE=m; S=STATES[m];
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===m));
+  syncSettings(); render(); scheduleAI();
+}
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>setMode(t.dataset.mode));
+["#setSide","#setOrder","#setDiff"].forEach(sel=>$(sel).addEventListener("change",()=>{ if(S.step===0) newDraft() }));
 $("#newBtn").onclick=newDraft;
 $("#undoBtn").onclick=undo;
 $("#setHints").onchange=e=>{S.hints=e.target.checked;render()};
