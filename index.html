@@ -20,16 +20,22 @@ button{cursor:pointer}
 :focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .wrap{max-width:1500px;margin:0 auto;padding-inline:16px;padding-block:14px 40px;display:flex;flex-direction:column;gap:12px}
 
-/* mode tabs */
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
-.tab{background:none;border:0;border-bottom:3px solid transparent;padding:8px 14px;font-family:var(--f-disp);font-weight:600;font-size:17px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:-1px}
-.tab.on{color:var(--fg);border-bottom-color:var(--gold)}
-.tab small{font-family:var(--f-body);font-weight:500;font-size:12px;text-transform:none;letter-spacing:0;margin-left:6px;color:var(--muted)}
+/* top navigation with mode tabs */
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+.nav-in{max-width:1500px;margin:0 auto;padding-inline:16px;display:flex;align-items:stretch;gap:8px 24px;flex-wrap:wrap}
+.nav-logo{font-family:var(--f-disp);font-weight:700;font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);align-self:center;padding-block:10px}
+.tabs{display:flex;gap:2px}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:12px 18px 9px;font-family:var(--f-disp);font-weight:700;font-size:19px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tab:hover{color:var(--fg)}
+.tab.on{color:var(--fg);border-bottom-color:var(--gold);background:color-mix(in srgb,var(--gold) 8%,transparent)}
+.nav-hint{align-self:center;font-size:13px;color:var(--muted)}
 .turn.opp{border-color:var(--dire)}
 .turn.opp .who{color:var(--dire)}
 /* top bar */
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
 .brand{font-family:var(--f-disp);font-weight:700;font-size:26px;letter-spacing:.04em;text-transform:uppercase;line-height:1}
+.linkbtn{background:none;border:0;padding:0;color:var(--gold);text-decoration:underline;font-size:12px}
+#dataStatus.ok{color:var(--good)} #dataStatus.fail{color:var(--warn)}
 .brand small{display:block;font-family:var(--f-body);font-weight:500;font-size:12px;letter-spacing:.02em;text-transform:none;color:var(--muted);margin-top:4px}
 .settings{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
 .field{display:flex;flex-direction:column;gap:2px}
@@ -185,9 +191,19 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
 @media (prefers-reduced-motion:no-preference){.hero,.tl{transition:opacity .15s,border-color .15s}}
 </style>
 
+<nav class="nav">
+  <div class="nav-in">
+    <span class="nav-logo">CM Драфт</span>
+    <div class="tabs" role="tablist">
+      <button class="tab on" data-mode="ai" role="tab">Тренировка</button>
+      <button class="tab" data-mode="manual" role="tab">Турнир</button>
+    </div>
+    <span class="nav-hint" id="navHint">драфт против компьютера</span>
+  </div>
+</nav>
 <div class="wrap">
   <div class="top">
-    <div class="brand">CM Драфт-тренажёр<small>Captains Mode · патч 7.41f · ты против компьютера</small></div>
+    <div class="brand">CM Драфт-тренажёр<small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
     <div class="settings">
       <div class="field"><label for="setSide">Сторона</label>
         <select id="setSide"><option value="rad">Radiant</option><option value="dire">Dire</option></select></div>
@@ -202,10 +218,6 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     </div>
   </div>
 
-  <div class="tabs" role="tablist">
-    <button class="tab on" data-mode="ai" role="tab">Тренировка<small>против компьютера</small></button>
-    <button class="tab" data-mode="manual" role="tab">Турнир<small>ручной драфт за обе команды</small></button>
-  </div>
   <div class="timeline" id="timeline"></div>
 
   <div class="board">
@@ -225,7 +237,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
           <div class="card"><h4>Ход драфта</h4><div class="log" id="log"></div></div>
         </div>
       </div>
-      <p class="note">Мета-оценка: винрейт героя в пабах на 7.41f (DotaPicks, все ранги) плюс приоритет в про-сцене после TI 2026 и правок 7.41f. Синергии и контрпики — модель по свойствам героев и известным связкам, а не статистика матчей. Компьютер видит то же, что подсказки, плюс случайность по уровню сложности.</p>
+      <p class="note">Откуда оценки. Когда есть связь с OpenDota, мета считается по свежей статистике: винрейт героя на рангах Divine и Immortal, частота пиков и банов в про-матчах и винрейт в про. Контрпики берутся из реальной статистики матчапов «герой против героя»: для каждого пика она подгружается автоматически, малые выборки сглаживаются, а правила остаются как небольшая поправка. Синергии пока считаются по правилам и известным связкам, отдельной статистики «вместе» у OpenDota нет. Без связи (например, внутри claude.ai) работает встроенная модель: снимок пабового винрейта 7.41f и правила. Компьютер видит то же, что подсказки, плюс случайность по уровню сложности.</p>
     </div>
     <section class="team dire" id="teamDire"></section>
   </div>
@@ -234,130 +246,130 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
 <script>
 /* ===== DATA ===== name|abbr|attr|range|positions|tags|pub winrate|pro priority */
 const RAW = `Anti-Mage|AM|agi|M|1|ph lt mo mb sq|50.9|0.5
-Axe|Axe|str|M|3|in ad ta bp ea|50.6|0
+Axe|Axe|str|M|34|in ad ta bp ea|50.6|0
 Bane|Bane|all|R|54|st bp gk|49.2|0
-Bloodseeker|BS|agi|M|132|ph ea de si ls|51.4|0
-Crystal Maiden|CM|int|R|5|ad ao st sq|51.9|0
-Drow Ranger|Drow|agi|R|1|ph lt rg si sq|46.2|0
-Earthshaker|ES|str|M|43|in ad st ao|50.7|0.5
+Bloodseeker|BS|agi|M|1342|ph ea de si ls|51.4|0
+Crystal Maiden|CM|int|R|54|ad ao st sq|51.9|0
+Drow Ranger|Drow|agi|R|12|ph lt rg si sq|46.2|0
+Earthshaker|ES|str|M|435|in ad st ao|50.7|0.5
 Juggernaut|Jugg|agi|M|1|ph lt ls ea|52.4|0
-Mirana|Mira|agi|R|452|st gk mo|51.5|2
-Morphling|Morph|agi|R|1|ph lt mo md|47.8|0
-Shadow Fiend|SF|agi|R|2|ph mg ao sq ea|42.5|1
+Mirana|Mira|agi|R|4521|st gk mo|51.5|2
+Morphling|Morph|agi|R|12|ph lt mo md|47.8|0
+Shadow Fiend|SF|agi|R|21|ph mg ao sq ea|42.5|1
 Phantom Lancer|PL|agi|M|1|ph il lt mb mo|53.5|0
-Puck|Puck|int|R|2|in ad mo si mg|46.8|1
-Pudge|Pudge|str|M|435|st gk ta|51.3|0
+Puck|Puck|int|R|23|in ad mo si mg|46.8|1
+Pudge|Pudge|str|M|4352|st gk ta|51.3|0
 Razor|Razor|agi|R|132|ph ta ea ls|50.3|0
-Sand King|SK|all|M|34|in ad ao mo|49.6|0
+Sand King|SK|all|M|342|in ad ao mo|49.6|0
 Storm Spirit|Storm|int|R|2|mg mo md gk|46.9|0.5
 Sven|Sven|str|M|1|ph lt ao st|51.4|0
-Tiny|Tiny|str|M|24|bu st ph gk|44.9|1
-Vengeful Spirit|VS|agi|R|54|st sv ar gk|52.5|0
-Windranger|WR|all|R|241|ph st mo|48.6|0
+Tiny|Tiny|str|M|241|bu st ph gk|44.9|1
+Vengeful Spirit|VS|agi|R|541|st sv ar gk|52.5|0
+Windranger|WR|all|R|2413|ph st mo|48.6|0
 Zeus|Zeus|int|R|254|mg bu de ao sq|50.3|0
-Kunkka|Kunkka|str|M|32|ad in ph ta|49.4|0
+Kunkka|Kunkka|str|M|324|ad in ph ta|49.4|0
 Lina|Lina|int|R|241|bu mg st sq|47.3|0
 Lion|Lion|int|R|54|st bu gk sq|49.0|0
 Shadow Shaman|Shaman|int|R|54|st pu gk|51.8|0
-Slardar|Slardar|str|M|3|ar de st in ta|49.6|0
-Tidehunter|Tide|str|M|3|ad in ta ao|49.9|0
-Witch Doctor|WD|int|R|5|st ao mg he|52.1|0
-Lich|Lich|int|R|5|ao mg sv|52.7|0
-Riki|Riki|agi|M|14|iv ph gk si|52.9|0
-Enigma|Enigma|all|R|34|ad in bp pu cs ao|51.0|0
-Tinker|Tinker|int|R|2|mg pu md|47.5|0
-Sniper|Sniper|agi|R|21|ph rg sq|49.5|0
-Necrophos|Necro|int|R|23|mg ls ta|51.0|0
+Slardar|Slardar|str|M|34|ar de st in ta|49.6|0
+Tidehunter|Tide|str|M|34|ad in ta ao|49.9|0
+Witch Doctor|WD|int|R|54|st ao mg he|52.1|0
+Lich|Lich|int|R|54|ao mg sv|52.7|0
+Riki|Riki|agi|M|41|iv ph gk si|52.9|0
+Enigma|Enigma|all|R|345|ad in bp pu cs ao|51.0|0
+Tinker|Tinker|int|R|24|mg pu md|47.5|0
+Sniper|Sniper|agi|R|214|ph rg sq|49.5|0
+Necrophos|Necro|int|R|235|mg ls ta|51.0|0
 Warlock|Lock|int|R|54|ad he ao cs|50.0|0
-Beastmaster|BM|all|M|3|st bp pu in|45.8|1
-Queen of Pain|QoP|int|R|2|mg mo bu ao|47.6|0
-Venomancer|Veno|all|R|453|ao pu mg|47.5|0
+Beastmaster|BM|all|M|32|st bp pu in|45.8|1
+Queen of Pain|QoP|int|R|21|mg mo bu ao|47.6|0
+Venomancer|Veno|all|R|4532|ao pu mg|47.5|0
 Faceless Void|FV|agi|M|1|ad bp ph lt in|48.8|0
-Wraith King|WK|str|M|1|ph ta st ls pa|55.0|0
-Death Prophet|DP|all|R|23|pu mg si ls|48.8|0
+Wraith King|WK|str|M|13|ph ta st ls pa|55.0|0
+Death Prophet|DP|all|R|234|pu mg si ls|48.8|0
 Phantom Assassin|PA|agi|M|1|ph lt pa|51.3|0
-Pugna|Pugna|int|R|24|mg pu ma|50.4|0
+Pugna|Pugna|int|R|254|mg pu ma|50.4|0
 Templar Assassin|TA|agi|R|21|ph ar mo ea|46.0|0
-Viper|Viper|agi|R|23|br ta ea ph|48.6|0
+Viper|Viper|agi|R|231|br ta ea ph|48.6|0
 Luna|Luna|agi|R|1|ph ao pu lt|50.3|0
-Dragon Knight|DK|str|M|132|ph ta pu st|52.6|0
-Dazzle|Dazzle|all|R|54|sv he|51.4|0
-Clockwerk|Clock|str|M|43|in gk ta|47.1|1
-Leshrac|Lesh|int|R|23|mg pu ao|51.1|0
-Nature's Prophet|NP|all|R|431|pu mo|43.0|0
-Lifestealer|LS|str|M|1|ph ls lt|51.6|0
+Dragon Knight|DK|str|M|213|ph ta pu st|52.6|0
+Dazzle|Dazzle|all|R|541|sv he|51.4|0
+Clockwerk|Clock|str|M|432|in gk ta|47.1|1
+Leshrac|Lesh|int|R|234|mg pu ao|51.1|0
+Nature's Prophet|NP|all|R|4312|pu mo|43.0|0
+Lifestealer|LS|str|M|13|ph ls lt|51.6|0
 Dark Seer|DS|int|M|3|ad in sv|49.4|0
-Clinkz|Clinkz|agi|R|14|iv ph pu|49.9|0
-Omniknight|Omni|str|M|54|sv he|50.9|0
-Enchantress|Ench|int|R|45|he pu|47.7|0
-Huskar|Huskar|str|R|21|ph ls ea|45.6|0
-Night Stalker|NS|str|M|34|si gk ea ta|51.4|0
-Broodmother|Brood|agi|M|21|il pu ea|50.8|0
-Bounty Hunter|BH|agi|M|4|de iv gk|52.6|0.5
-Weaver|Weaver|agi|R|14|ph mo iv|47.2|0
-Jakiro|Jak|int|R|5|ao pu st|48.7|0
-Batrider|Bat|all|R|34|in bp gk mo|44.8|1
-Chen|Chen|int|R|5|he pu sv il|45.7|0.5
+Clinkz|Clinkz|agi|R|142|iv ph pu|49.9|0
+Omniknight|Omni|str|M|543|sv he|50.9|0
+Enchantress|Ench|int|R|452|he pu|47.7|0
+Huskar|Huskar|str|R|213|ph ls ea|45.6|0
+Night Stalker|NS|str|M|341|si gk ea ta|51.4|0
+Broodmother|Brood|agi|M|213|il pu ea|50.8|0
+Bounty Hunter|BH|agi|M|45|de iv gk|52.6|0.5
+Weaver|Weaver|agi|R|145|ph mo iv|47.2|0
+Jakiro|Jak|int|R|542|ao pu st|48.7|0
+Batrider|Bat|all|R|342|in bp gk mo|44.8|1
+Chen|Chen|int|R|54|he pu sv il|45.7|0.5
 Spectre|Spec|agi|M|1|ph lt ta pa|52.7|0
-Ancient Apparition|AA|int|R|5|ah ao mg sq|51.3|0
-Doom|Doom|str|M|3|br si ta st|47.5|0
+Ancient Apparition|AA|int|R|54|ah ao mg sq|51.3|0
+Doom|Doom|str|M|31|br si ta st|47.5|0
 Ursa|Ursa|agi|M|1|ph ea|49.0|0.5
-Spirit Breaker|SB|str|M|43|st gk in ta pa|52.4|0
-Gyrocopter|Gyro|agi|R|1|ph ao lt|46.2|0
+Spirit Breaker|SB|str|M|431|st gk in ta pa|52.4|0
+Gyrocopter|Gyro|agi|R|15|ph ao lt|46.2|0
 Alchemist|Alch|str|M|13|ph ta st|47.0|0
-Invoker|Invo|int|R|2|mg st ao|50.3|0
-Silencer|Sil|int|R|54|si mg|50.6|0
-Outworld Destroyer|OD|int|R|2|mg sv md|53.4|0
-Lycan|Lycan|str|M|13|pu ph il ea|48.7|0
-Brewmaster|Brew|all|M|3|in ad ta dp|50.9|0
+Invoker|Invo|int|R|24|mg st ao|50.3|0
+Silencer|Sil|int|R|542|si mg|50.6|0
+Outworld Destroyer|OD|int|R|21|mg sv md|53.4|0
+Lycan|Lycan|str|M|132|pu ph il ea|48.7|0
+Brewmaster|Brew|all|M|31|in ad ta dp|50.9|0
 Shadow Demon|SD|int|R|54|sv dp|45.4|1
 Lone Druid|LD|agi|R|12|ph pu il|48.8|0
 Chaos Knight|CK|str|M|13|ph il st ta|51.4|0
 Meepo|Meepo|agi|M|21|il gk ea|53.2|0
-Treant Protector|Treant|str|M|45|he ad in ta|45.3|1
-Ogre Magi|Ogre|str|M|54|st ta|50.3|0
+Treant Protector|Treant|str|M|453|he ad in ta|45.3|1
+Ogre Magi|Ogre|str|M|543|st ta|50.3|0
 Undying|Undy|str|M|54|he ta|49.7|0
-Rubick|Rubick|int|R|45|st|49.4|1
+Rubick|Rubick|int|R|452|st|49.4|1
 Disruptor|Disr|int|R|54|ad si gk|50.5|0
-Nyx Assassin|Nyx|all|M|4|st gk mb iv|53.0|0
+Nyx Assassin|Nyx|all|M|43|st gk mb iv|53.0|0
 Naga Siren|Naga|agi|M|14|il pu sv ph|49.5|0
-Keeper of the Light|KotL|int|R|54|mg pu sq|49.1|0
+Keeper of the Light|KotL|int|R|542|mg pu sq|49.1|0
 Io|Io|all|R|54|sv he|49.1|0
-Visage|Visage|all|R|24|pu st il|53.0|0
+Visage|Visage|all|R|245|pu st il|53.0|0
 Slark|Slark|agi|M|1|ph mo gk|50.0|0
 Medusa|Dusa|agi|R|12|ph ao lt md|49.2|0
-Troll Warlord|Troll|agi|R|1|ph lt|51.9|0
-Centaur Warrunner|Cent|str|M|3|in ad ta|49.3|0
-Magnus|Mag|all|M|32|in ad ao|49.3|1
+Troll Warlord|Troll|agi|R|12|ph lt|51.9|0
+Centaur Warrunner|Cent|str|M|34|in ad ta|49.3|0
+Magnus|Mag|all|M|3241|in ad ao|49.3|1
 Timbersaw|Timber|str|M|32|mg ta mo|45.7|0
 Bristleback|BB|str|M|31|ta pa ph|49.3|0
-Tusk|Tusk|str|M|4|in gk st|47.8|1
-Skywrath Mage|Sky|int|R|45|mg ma si bu sq|50.1|0
-Abaddon|Aba|all|M|543|sv dp he|51.5|0
+Tusk|Tusk|str|M|435|in gk st|47.8|1
+Skywrath Mage|Sky|int|R|452|mg ma si bu sq|50.1|0
+Abaddon|Aba|all|M|5431|sv dp he|51.5|0
 Elder Titan|ET|str|M|45|ar ma ad|50.2|0
 Legion Commander|LC|str|M|31|bp gk in ph|52.9|0
-Techies|Techies|all|R|45|ao mg|51.0|0
-Ember Spirit|Ember|agi|M|2|mo ao ph|49.1|1
-Earth Spirit|ESp|str|M|43|st si mo in|49.4|1
-Underlord|UL|str|M|3|ad ta ao pu|48.1|1
+Techies|Techies|all|R|452|ao mg|51.0|0
+Ember Spirit|Ember|agi|M|21|mo ao ph|49.1|1
+Earth Spirit|ESp|str|M|432|st si mo in|49.4|1
+Underlord|UL|str|M|35|ad ta ao pu|48.1|1
 Terrorblade|TB|agi|M|1|ph il lt pu|46.7|0
-Phoenix|Phx|str|R|45|ao he st|51.9|0
-Oracle|Ora|int|R|5|sv dp he|50.3|0
+Phoenix|Phx|str|R|453|ao he st|51.9|0
+Oracle|Ora|int|R|54|sv dp he|50.3|0
 Winter Wyvern|WW|int|R|54|ad sv|49.9|0
 Arc Warden|Arc|all|R|21|ph pu lt|52.3|0
 Monkey King|MK|agi|M|124|ph ad mo|45.7|0
-Dark Willow|DW|int|R|45|st mg|49.0|0
-Pangolier|Pango|all|M|324|in ad mo|46.6|1
+Dark Willow|DW|int|R|452|st mg|49.0|0
+Pangolier|Pango|all|M|3241|in ad mo|46.6|1
 Grimstroke|Grim|int|R|45|st si mg|52.0|0
-Hoodwink|Hood|agi|R|45|st mg mo|47.2|2
-Void Spirit|Void|all|M|2|mo mg st|49.4|1
-Snapfire|Snap|all|R|45|st ao mg|49.3|0
-Mars|Mars|str|M|32|in ad ta|47.5|1
+Hoodwink|Hood|agi|R|452|st mg mo|47.2|2
+Void Spirit|Void|all|M|234|mo mg st|49.4|1
+Snapfire|Snap|all|R|452|st ao mg|49.3|0
+Mars|Mars|str|M|324|in ad ta|47.5|1
 Ringmaster|Ring|int|R|54|st|48.8|0
-Dawnbreaker|DB|str|M|32|ta he in|52.1|0
-Marci|Marci|all|M|4312|gk ea st|50.0|1
-Primal Beast|PB|str|M|32|in st ta bp|49.6|1
-Muerta|Muerta|int|R|12|ph mg lt|47.6|0
+Dawnbreaker|DB|str|M|324|ta he in|52.1|0
+Marci|Marci|all|M|4123|gk ea st|50.0|1
+Primal Beast|PB|str|M|324|in st ta bp|49.6|1
+Muerta|Muerta|int|R|124|ph mg lt|47.6|0
 Kez|Kez|agi|M|12|ph mo gk|45.3|0
 Largo|Largo|str|M|543|he st ta|48.0|0`;
 
@@ -486,6 +498,75 @@ const sum=r=>r.reduce((s,x)=>s+x[0],0);
 const CTR = Array.from({length:N},()=>new Float32Array(N));
 const SYN = Array.from({length:N},()=>new Float32Array(N));
 for(let i=0;i<N;i++)for(let j=0;j<N;j++){ if(i===j)continue; CTR[i][j]=sum(ctrRules(HEROES[i],HEROES[j])); SYN[i][j]=sum(synRules(HEROES[i],HEROES[j])); }
+const CTR_R = CTR.map(r=>Float32Array.from(r));
+
+/* ===== LIVE DATA (OpenDota) ===== */
+const OD="https://api.opendota.com/api";
+const DATA={status:"idle",updated:null,mu:{},odId:{},pending:new Set()};
+function cacheGet(k,maxAge){try{const v=JSON.parse(localStorage.getItem(k));if(v&&Date.now()-v.t<maxAge)return v}catch(e){}return null}
+function cacheSet(k,d){try{localStorage.setItem(k,JSON.stringify({t:Date.now(),d}))}catch(e){}}
+function applyHeroStats(d){
+  const maxPres=Math.max(...d.map(x=>(x.pro_pick||0)+(x.pro_ban||0)))||1;
+  d.forEach(x=>{
+    const id=BYNAME[x.localized_name]; if(id==null) return;
+    const h=HEROES[id]; h.odId=x.id; DATA.odId[x.id]=id;
+    const p=(x["7_pick"]||0)+(x["8_pick"]||0), w=(x["7_win"]||0)+(x["8_win"]||0);
+    const wr=(w+250)/(p+500);                       // сглаживание к 50% на малых выборках
+    const pp=x.pro_pick||0, pb=x.pro_ban||0;
+    const pwr=(( x.pro_win||0)+5)/(pp+10);
+    const pres=(pp+pb)/maxPres;
+    h.live={wr:wr*100,games:p,pres,proPick:pp,proBan:pb,proWr:pp?(x.pro_win||0)/pp*100:null};
+    h.meta=+(((wr-0.5)*100)*0.5 + pres*3 + ((pwr-0.5)*100)*0.08).toFixed(2);
+  });
+}
+async function loadHeroStats(force){
+  DATA.status="loading"; renderData();
+  try{
+    let c=force?null:cacheGet("od_herostats",6*3600e3), d=c&&c.d;
+    if(!d){const r=await fetch(OD+"/heroStats");if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_herostats",d);c={t:Date.now()}}
+    applyHeroStats(d); DATA.status="ok"; DATA.updated=new Date(c.t);
+    if(force){DATA.mu={};for(let i=0;i<N;i++)CTR[i].set(CTR_R[i])}
+    allPicked().forEach(id=>loadMatchups(id,force));
+  }catch(e){DATA.status="fail"}
+  renderData(); render();
+}
+function allPicked(){const r=new Set();Object.values(STATES).forEach(st=>st.draft.forEach((v,i)=>{if(v!=null&&v>=0&&ORDER[i].act==="P")r.add(v)}));return [...r]}
+function dataAdv(a,b){ // насколько a выигрывает у b, в процентных пунктах, по статистике
+  let w,g;
+  const ma=DATA.mu[a]&&DATA.mu[a][b], mb=DATA.mu[b]&&DATA.mu[b][a];
+  if(ma&&ma.g){w=ma.w;g=ma.g} else if(mb&&mb.g){w=mb.g-mb.w;g=mb.g} else return null;
+  const sh=(w+7.5)/(g+15);
+  return {pp:Math.max(-12,Math.min(12,(sh-0.5)*100)),raw:w/g*100,g};
+}
+function updatePair(a,b){
+  const d=dataAdv(a,b); if(!d){CTR[a][b]=CTR_R[a][b];return}
+  const wd=0.85*d.g/(d.g+20);
+  CTR[a][b]=(1-wd)*CTR_R[a][b]+wd*Math.max(0,d.pp)*0.25;
+}
+async function loadMatchups(id,force){
+  const h=HEROES[id];
+  if(DATA.status!=="ok"||!h.odId||(DATA.mu[id]&&!force)||DATA.pending.has(id)) return;
+  DATA.pending.add(id); renderData();
+  try{
+    let c=force?null:cacheGet("od_mu_"+h.odId,12*3600e3), d=c&&c.d;
+    if(!d){const r=await fetch(`${OD}/heroes/${h.odId}/matchups`);if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_mu_"+h.odId,d)}
+    const m={}; d.forEach(x=>{const j=DATA.odId[x.hero_id]; if(j!=null) m[j]={g:x.games_played,w:x.wins}});
+    DATA.mu[id]=m;
+    for(let j=0;j<N;j++){ if(j!==id){updatePair(id,j);updatePair(j,id)} }
+  }catch(e){}
+  DATA.pending.delete(id); renderData(); render();
+}
+function dataNote(a,b){const d=dataAdv(a,b);return d?`статистика: ${d.raw.toFixed(0)}% побед в ${d.g} играх`:""}
+function renderData(){
+  const el=document.getElementById("dataStatus"), btn=document.getElementById("dataReload"); if(!el) return;
+  el.className=DATA.status==="ok"?"ok":DATA.status==="fail"?"fail":"";
+  const n=Object.keys(DATA.mu).length, p=DATA.pending.size;
+  el.textContent = DATA.status==="loading" ? "загружаю статистику OpenDota…"
+    : DATA.status==="ok" ? `статистика OpenDota на ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})} · матчапы: ${n} героев${p?" (грузятся ещё "+p+")":""}`
+    : DATA.status==="fail" ? "нет связи с OpenDota — работает встроенная модель" : "статистика не загружена";
+  btn.hidden = DATA.status==="loading";
+  btn.textContent = DATA.status==="fail" ? "повторить" : "обновить";
+}
 
 /* ===== DRAFT ORDER (7.34+ CM, 24 steps) ===== */
 const ORDER = "FB FB SB SB FB SB SB FP SP FB FB SB SP FP FP SP SP FP FB SB FB SB FP SP".split(" ").map(s=>({side:s[0],act:s[1]}));
@@ -607,6 +688,7 @@ function commit(id,team){
   const g = ((team==="P"||MAN()) && id>=0) ? gradeOf(id,team,act) : null;
   S.draft[i]=id; S.step++; S.sel=null;
   S.log.push({i,team,act,id,g});
+  if(act==="P"&&id>=0) loadMatchups(id);
   S.stepLeft=done()?0:STEP_TIME(S.step);
   render(); scheduleAI();
 }
@@ -729,11 +811,12 @@ function renderDetail(){
   const me=picks("P"),en=picks("A");
   const reasons=(rs)=>rs.sort((a,b)=>b[0]-a[0]).map(x=>x[1]).join(", ");
   const synR=me.map(a=>[a,SYN[id][a],reasons(synRules(h,HEROES[a]))]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
-  const ctrR=en.map(e=>[e,CTR[id][e],reasons(ctrRules(h,HEROES[e]))]).filter(x=>x[1]>=0.3).sort((a,b)=>b[1]-a[1]);
-  const thrR=en.map(e=>[e,-CTR[e][id],reasons(ctrRules(HEROES[e],h))]).filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]);
+  const withData=(r,a,b)=>[dataNote(a,b),r].filter(Boolean).join("; ");
+  const ctrR=en.map(e=>[e,CTR[id][e],withData(reasons(ctrRules(h,HEROES[e])),id,e)]).filter(x=>x[1]>=0.3).sort((a,b)=>b[1]-a[1]);
+  const thrR=en.map(e=>[e,-CTR[e][id],withData(reasons(ctrRules(HEROES[e],h)),e,id)]).filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]);
   const eP=evalHero(id,"P"), eA=evalHero(id,"A");
   const attrName=ATTR.find(a=>a[0]===h.attr);
-  el.innerHTML=`<div class="dh"><span class="big">${esc(h.name)}</span><span class="meta" style="color:var(${attrName[2]})">${attrName[1]}</span><span class="meta">${h.ranged?"дальний бой":"ближний бой"} · позиции ${h.pos.join(", ")} · паб WR ${h.wr.toFixed(1)}%${h.pro?" · про-приоритет":""}</span></div>
+  el.innerHTML=`<div class="dh"><span class="big">${esc(h.name)}</span><span class="meta" style="color:var(${attrName[2]})">${attrName[1]}</span><span class="meta">${h.ranged?"дальний бой":"ближний бой"} · позиции ${h.pos.join(", ")} · ${h.live?`Divine+ WR ${h.live.wr.toFixed(1)}% · про: ${h.live.proPick} пиков, ${h.live.proBan} банов${h.live.proWr!=null&&h.live.proPick>=5?", WR "+h.live.proWr.toFixed(0)+"%":""}`:`паб WR ${h.wr.toFixed(1)}%${h.pro?" · про-приоритет":""}`}</span></div>
   <div class="tags">${[...h.t].map(k=>`<span class="tag">${TAG_RU[k]||k}</span>`).join("")}</div>
   <div class="cols3">
     <div class="rel"><div class="sub">С ${L().our} пиками</div>${relList(synR,"")}</div>
@@ -876,6 +959,7 @@ function setMode(m){
   clearTimeout(STATES.ai.aiTimer);
   MODE=m; S=STATES[m];
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===m));
+  $("#navHint").textContent=m==="manual"?"все баны и пики ставите вы — за себя и за соперника":"драфт против компьютера";
   syncSettings(); render(); scheduleAI();
 }
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>setMode(t.dataset.mode));
@@ -885,4 +969,6 @@ $("#undoBtn").onclick=undo;
 $("#setHints").onchange=e=>{S.hints=e.target.checked;render()};
 $("#setTimer").onchange=e=>{S.timer=e.target.checked;S.stepLeft=STEP_TIME(S.step);renderTurn()};
 newDraft();
+$("#dataReload").onclick=()=>loadHeroStats(true);
+loadHeroStats(false);
 </script>
