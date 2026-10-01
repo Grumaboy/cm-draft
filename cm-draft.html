@@ -1,0 +1,838 @@
+<title>CM Драфт-тренажёр</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: draft room like the client — Radiant column | hero pool + analysis | Dire column, 24-step timeline across the top */
+:root{
+  --bg:#0b1016; --panel:#121a22; --panel2:#18222c; --line:#243140; --fg:#e1e7ee; --muted:#8494a6;
+  --rad:#6cc46f; --dire:#df5c46; --gold:#e8b54d;
+  --str:#c9493a; --agi:#3aa564; --int:#3c8bd3; --all:#9f7ed3;
+  --good:#6cc46f; --bad:#e3654f; --warn:#e8b54d;
+  --f-disp:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.4}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.wrap{max-width:1500px;margin:0 auto;padding-inline:16px;padding-block:14px 40px;display:flex;flex-direction:column;gap:12px}
+
+/* top bar */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
+.brand{font-family:var(--f-disp);font-weight:700;font-size:26px;letter-spacing:.04em;text-transform:uppercase;line-height:1}
+.brand small{display:block;font-family:var(--f-body);font-weight:500;font-size:12px;letter-spacing:.02em;text-transform:none;color:var(--muted);margin-top:4px}
+.settings{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
+.field{display:flex;flex-direction:column;gap:2px}
+.field label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+select{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 8px}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);padding-top:14px}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:7px 12px;font-family:var(--f-disp);font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--gold);color:#1b1306;border-color:var(--gold)}
+.btn:disabled{opacity:.4;cursor:default}
+
+/* timeline */
+.timeline{display:grid;grid-template-columns:repeat(24,minmax(34px,1fr));gap:3px;overflow-x:auto;padding-bottom:4px}
+.tl{background:var(--panel);border:1px solid var(--line);border-radius:3px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--f-disp);position:relative;min-width:34px}
+.tl .n{font-size:10px;color:var(--muted);font-family:var(--f-mono)}
+.tl .v{font-size:13px;font-weight:600;letter-spacing:.02em;white-space:nowrap;overflow:hidden;max-width:100%;padding:0 2px}
+.tl::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;border-radius:0 0 3px 3px}
+.tl.rad::after{background:var(--rad)} .tl.dire::after{background:var(--dire)}
+.tl.ban .v{color:var(--muted);text-decoration:line-through}
+.tl.pick{background:var(--panel2)}
+.tl.cur{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+.tl.gap{margin-left:6px}
+
+/* board */
+.board{display:grid;grid-template-columns:230px minmax(0,1fr) 230px;gap:12px;align-items:start}
+.team{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.team h2{margin:0;font-family:var(--f-disp);font-size:22px;letter-spacing:.06em;text-transform:uppercase;display:flex;justify-content:space-between;align-items:baseline}
+.team.rad h2{color:var(--rad)} .team.dire h2{color:var(--dire)}
+.team h2 span{font-family:var(--f-body);font-size:12px;letter-spacing:.02em;text-transform:none;color:var(--muted)}
+.slots{display:flex;flex-direction:column;gap:5px}
+.slot{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;min-height:40px;padding:4px 8px;font-size:14px}
+.slot.empty{color:var(--muted);border-style:dashed}
+.slot .pos{margin-left:auto;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.bans{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.bans .b{background:var(--panel2);border:1px dashed var(--line);border-radius:3px;height:28px;font-family:var(--f-disp);font-size:13px;display:flex;align-items:center;justify-content:center;color:var(--muted);text-decoration:line-through;overflow:hidden;white-space:nowrap}
+.bans .b.e{text-decoration:none;opacity:.5}
+.sub{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.meters{display:flex;flex-direction:column;gap:5px}
+.meter{display:grid;grid-template-columns:78px 1fr 18px;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.meter .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
+.meter .bar i{display:block;height:100%;background:var(--muted);border-radius:3px}
+.meter b{font-family:var(--f-mono);font-weight:500;font-size:11px;text-align:right;color:var(--fg)}
+.team.rad .meter .bar i{background:var(--rad)} .team.dire .meter .bar i{background:var(--dire)}
+.you{font-size:11px;background:var(--gold);color:#1b1306;border-radius:3px;padding:1px 6px;font-family:var(--f-body);font-weight:600;letter-spacing:.04em}
+
+/* center */
+.center{display:flex;flex-direction:column;gap:10px;min-width:0}
+.turn{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 14px}
+.turn .who{font-family:var(--f-disp);font-weight:700;font-size:24px;letter-spacing:.05em;text-transform:uppercase;line-height:1}
+.turn .phase{font-size:13px;color:var(--muted)}
+.turn .clock{margin-left:auto;font-family:var(--f-mono);font-size:14px;display:flex;gap:12px;color:var(--muted)}
+.turn .clock b{color:var(--fg);font-weight:500}
+.turn.mine{border-color:var(--gold)}
+.turn.mine .who{color:var(--gold)}
+.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.filters input{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 10px;min-width:0;flex:1 1 180px}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:4px 11px;font-size:13px}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+.pool{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.attr{display:flex;flex-direction:column;gap:6px;min-width:0}
+.attr h3{margin:0;font-family:var(--f-disp);font-size:14px;letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;gap:6px;color:var(--muted)}
+.attr h3::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--c)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:4px}
+.hero{position:relative;border:1px solid var(--line);border-radius:4px;background:linear-gradient(160deg,color-mix(in srgb,var(--c) 34%,var(--panel2)) 0%,var(--panel2) 70%);height:52px;padding:4px 5px;display:flex;flex-direction:column;justify-content:space-between;text-align:left;overflow:hidden}
+.hero .ab{font-family:var(--f-disp);font-weight:700;font-size:17px;letter-spacing:.02em;line-height:1}
+.hero .nm{font-size:10px;line-height:1.1;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero .sc{position:absolute;top:3px;right:4px;font-family:var(--f-mono);font-size:10px;padding:0 3px;border-radius:2px}
+.hero.img{height:auto;aspect-ratio:16/9;padding:0;background:var(--panel2)}
+.hero.img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hero.img .ab{display:none}
+.hero.img .nm{position:absolute;left:0;right:0;bottom:0;padding:8px 4px 2px;font-size:10px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.85))}
+.pimg{width:46px;aspect-ratio:16/9;object-fit:cover;border-radius:3px;flex:none}
+.bans .b{position:relative}
+.bans .b img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:grayscale(1) brightness(.6)}
+.bans .b:has(img)::after{content:"";position:absolute;left:-10%;right:-10%;top:50%;height:2px;background:var(--bad);transform:rotate(-20deg)}
+.tl img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:2px}
+.tl.ban img{filter:grayscale(1) brightness(.55)}
+.tl:has(img) .n{position:relative;z-index:1;background:rgba(0,0,0,.6);border-radius:2px;padding:0 2px;color:#fff;align-self:flex-start;margin:2px}
+.tl:has(img) .v{display:none}
+.hero:hover{border-color:var(--fg)}
+.hero[draggable="true"]{cursor:grab}
+.dz{border-radius:5px;transition:box-shadow .12s,background .12s}
+body.dnd .dz.ok{box-shadow:0 0 0 2px var(--gold);background:color-mix(in srgb,var(--gold) 8%,transparent)}
+body.dnd .dz.ok.over{box-shadow:0 0 0 3px var(--gold);background:color-mix(in srgb,var(--gold) 20%,transparent)}
+.dz-hint{font-size:11px;color:var(--gold);display:none}
+body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
+.hero.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.hero.dim{opacity:.22}
+.hero.used{filter:grayscale(1);opacity:.28;cursor:not-allowed}
+.hero.used.p-rad{box-shadow:inset 0 -3px 0 var(--rad)} .hero.used.p-dire{box-shadow:inset 0 -3px 0 var(--dire)}
+.hero.hint{box-shadow:inset 0 0 0 1px var(--gold)}
+.hero.hint .sc{background:var(--gold);color:#1b1306}
+
+/* detail + hints */
+.lower{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.card h4{margin:0;font-family:var(--f-disp);font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.dh{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+.dh .big{font-family:var(--f-disp);font-weight:700;font-size:28px;line-height:1}
+.dh .meta{font-size:13px;color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:4px}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--muted)}
+.cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.rel{display:flex;flex-direction:column;gap:3px;font-size:13px;min-width:0}
+.rel .row{display:flex;justify-content:space-between;gap:6px}
+.rel .row span:last-child{font-family:var(--f-mono);font-size:12px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.muted{color:var(--muted);font-size:13px}
+.why{font-size:12px;color:var(--muted)}
+.score{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.score b{color:var(--fg);font-weight:500}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.hints{display:flex;flex-direction:column;gap:5px}
+.hint-row{display:grid;grid-template-columns:52px minmax(0,1fr) 44px;gap:8px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 8px;text-align:left}
+.hint-row:hover{border-color:var(--gold)}
+.hint-row .ab{font-family:var(--f-disp);font-weight:700;font-size:16px}
+.hint-row .r{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hint-row .v{font-family:var(--f-mono);font-size:12px;text-align:right;color:var(--gold)}
+.log{display:flex;flex-direction:column;gap:3px;font-size:13px;max-height:220px;overflow:auto}
+.log .l{display:grid;grid-template-columns:24px 1fr auto;gap:6px}
+.log .l .n{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.grade{font-size:11.5px;border-radius:3px;padding:0 6px;font-weight:600;white-space:nowrap}
+.g-a{background:color-mix(in srgb,var(--good) 25%,transparent);color:var(--good)}
+.g-b{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
+.g-c{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}
+
+/* analysis */
+.analysis{display:flex;flex-direction:column;gap:10px}
+.verdict{display:flex;flex-direction:column;gap:6px}
+.wbar{display:flex;height:26px;border-radius:4px;overflow:hidden;font-family:var(--f-mono);font-size:12px}
+.wbar div{display:flex;align-items:center;padding:0 8px;color:#0b1016;font-weight:500}
+.wbar .r{background:var(--rad)} .wbar .d{background:var(--dire);justify-content:flex-end}
+.ateams{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.check{display:grid;grid-template-columns:18px 1fr;gap:4px;font-size:13px}
+.lineup{display:flex;flex-direction:column;gap:3px;font-size:13px}
+.lineup div{display:flex;gap:8px}
+.lineup .p{font-family:var(--f-mono);font-size:12px;color:var(--muted);width:24px}
+.note{font-size:12px;color:var(--muted);max-width:90ch}
+
+@media (max-width:1100px){
+  .board{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .center{grid-column:1/-1;order:3}
+  .pool{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:720px){
+  .lower,.cols3,.ateams{grid-template-columns:minmax(0,1fr)}
+  .pool{grid-template-columns:minmax(0,1fr)}
+  .board{grid-template-columns:minmax(0,1fr)}
+  .settings{margin-left:0}
+}
+@media (prefers-reduced-motion:no-preference){.hero,.tl{transition:opacity .15s,border-color .15s}}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand">CM Драфт-тренажёр<small>Captains Mode · патч 7.41f · ты против компьютера</small></div>
+    <div class="settings">
+      <div class="field"><label for="setSide">Сторона</label>
+        <select id="setSide"><option value="rad">Radiant</option><option value="dire">Dire</option></select></div>
+      <div class="field"><label for="setOrder">Очерёдность</label>
+        <select id="setOrder"><option value="first">Первый пик</option><option value="second">Второй пик</option><option value="random">Монетка</option></select></div>
+      <div class="field"><label for="setDiff">Соперник</label>
+        <select id="setDiff"><option value="easy">Лёгкий</option><option value="normal" selected>Нормальный</option><option value="hard">Сильный</option></select></div>
+      <label class="chk"><input type="checkbox" id="setTimer"> Таймер</label>
+      <label class="chk"><input type="checkbox" id="setHints" checked> Подсказки</label>
+      <button class="btn" id="undoBtn">Отменить ход</button>
+      <button class="btn primary" id="newBtn">Новый драфт</button>
+    </div>
+  </div>
+
+  <div class="timeline" id="timeline"></div>
+
+  <div class="board">
+    <section class="team rad" id="teamRad"></section>
+    <div class="center">
+      <div class="turn" id="turn"></div>
+      <div id="analysisWrap" hidden></div>
+      <div class="filters">
+        <input id="search" type="search" placeholder="Поиск героя (англ. имя или сокращение)" autocomplete="off">
+        <div id="posChips" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+      </div>
+      <div class="pool" id="pool"></div>
+      <div class="lower">
+        <div class="card" id="detail"></div>
+        <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+          <div class="card" id="hintsCard"></div>
+          <div class="card"><h4>Ход драфта</h4><div class="log" id="log"></div></div>
+        </div>
+      </div>
+      <p class="note">Мета-оценка: винрейт героя в пабах на 7.41f (DotaPicks, все ранги) плюс приоритет в про-сцене после TI 2026 и правок 7.41f. Синергии и контрпики — модель по свойствам героев и известным связкам, а не статистика матчей. Компьютер видит то же, что подсказки, плюс случайность по уровню сложности.</p>
+    </div>
+    <section class="team dire" id="teamDire"></section>
+  </div>
+</div>
+
+<script>
+/* ===== DATA ===== name|abbr|attr|range|positions|tags|pub winrate|pro priority */
+const RAW = `Anti-Mage|AM|agi|M|1|ph lt mo mb sq|50.9|0.5
+Axe|Axe|str|M|3|in ad ta bp ea|50.6|0
+Bane|Bane|all|R|54|st bp gk|49.2|0
+Bloodseeker|BS|agi|M|132|ph ea de si ls|51.4|0
+Crystal Maiden|CM|int|R|5|ad ao st sq|51.9|0
+Drow Ranger|Drow|agi|R|1|ph lt rg si sq|46.2|0
+Earthshaker|ES|str|M|43|in ad st ao|50.7|0.5
+Juggernaut|Jugg|agi|M|1|ph lt ls ea|52.4|0
+Mirana|Mira|agi|R|452|st gk mo|51.5|2
+Morphling|Morph|agi|R|1|ph lt mo md|47.8|0
+Shadow Fiend|SF|agi|R|2|ph mg ao sq ea|42.5|1
+Phantom Lancer|PL|agi|M|1|ph il lt mb mo|53.5|0
+Puck|Puck|int|R|2|in ad mo si mg|46.8|1
+Pudge|Pudge|str|M|435|st gk ta|51.3|0
+Razor|Razor|agi|R|132|ph ta ea ls|50.3|0
+Sand King|SK|all|M|34|in ad ao mo|49.6|0
+Storm Spirit|Storm|int|R|2|mg mo md gk|46.9|0.5
+Sven|Sven|str|M|1|ph lt ao st|51.4|0
+Tiny|Tiny|str|M|24|bu st ph gk|44.9|1
+Vengeful Spirit|VS|agi|R|54|st sv ar gk|52.5|0
+Windranger|WR|all|R|241|ph st mo|48.6|0
+Zeus|Zeus|int|R|254|mg bu de ao sq|50.3|0
+Kunkka|Kunkka|str|M|32|ad in ph ta|49.4|0
+Lina|Lina|int|R|241|bu mg st sq|47.3|0
+Lion|Lion|int|R|54|st bu gk sq|49.0|0
+Shadow Shaman|Shaman|int|R|54|st pu gk|51.8|0
+Slardar|Slardar|str|M|3|ar de st in ta|49.6|0
+Tidehunter|Tide|str|M|3|ad in ta ao|49.9|0
+Witch Doctor|WD|int|R|5|st ao mg he|52.1|0
+Lich|Lich|int|R|5|ao mg sv|52.7|0
+Riki|Riki|agi|M|14|iv ph gk si|52.9|0
+Enigma|Enigma|all|R|34|ad in bp pu cs ao|51.0|0
+Tinker|Tinker|int|R|2|mg pu md|47.5|0
+Sniper|Sniper|agi|R|21|ph rg sq|49.5|0
+Necrophos|Necro|int|R|23|mg ls ta|51.0|0
+Warlock|Lock|int|R|54|ad he ao cs|50.0|0
+Beastmaster|BM|all|M|3|st bp pu in|45.8|1
+Queen of Pain|QoP|int|R|2|mg mo bu ao|47.6|0
+Venomancer|Veno|all|R|453|ao pu mg|47.5|0
+Faceless Void|FV|agi|M|1|ad bp ph lt in|48.8|0
+Wraith King|WK|str|M|1|ph ta st ls pa|55.0|0
+Death Prophet|DP|all|R|23|pu mg si ls|48.8|0
+Phantom Assassin|PA|agi|M|1|ph lt pa|51.3|0
+Pugna|Pugna|int|R|24|mg pu ma|50.4|0
+Templar Assassin|TA|agi|R|21|ph ar mo ea|46.0|0
+Viper|Viper|agi|R|23|br ta ea ph|48.6|0
+Luna|Luna|agi|R|1|ph ao pu lt|50.3|0
+Dragon Knight|DK|str|M|132|ph ta pu st|52.6|0
+Dazzle|Dazzle|all|R|54|sv he|51.4|0
+Clockwerk|Clock|str|M|43|in gk ta|47.1|1
+Leshrac|Lesh|int|R|23|mg pu ao|51.1|0
+Nature's Prophet|NP|all|R|431|pu mo|43.0|0
+Lifestealer|LS|str|M|1|ph ls lt|51.6|0
+Dark Seer|DS|int|M|3|ad in sv|49.4|0
+Clinkz|Clinkz|agi|R|14|iv ph pu|49.9|0
+Omniknight|Omni|str|M|54|sv he|50.9|0
+Enchantress|Ench|int|R|45|he pu|47.7|0
+Huskar|Huskar|str|R|21|ph ls ea|45.6|0
+Night Stalker|NS|str|M|34|si gk ea ta|51.4|0
+Broodmother|Brood|agi|M|21|il pu ea|50.8|0
+Bounty Hunter|BH|agi|M|4|de iv gk|52.6|0.5
+Weaver|Weaver|agi|R|14|ph mo iv|47.2|0
+Jakiro|Jak|int|R|5|ao pu st|48.7|0
+Batrider|Bat|all|R|34|in bp gk mo|44.8|1
+Chen|Chen|int|R|5|he pu sv il|45.7|0.5
+Spectre|Spec|agi|M|1|ph lt ta pa|52.7|0
+Ancient Apparition|AA|int|R|5|ah ao mg sq|51.3|0
+Doom|Doom|str|M|3|br si ta st|47.5|0
+Ursa|Ursa|agi|M|1|ph ea|49.0|0.5
+Spirit Breaker|SB|str|M|43|st gk in ta pa|52.4|0
+Gyrocopter|Gyro|agi|R|1|ph ao lt|46.2|0
+Alchemist|Alch|str|M|13|ph ta st|47.0|0
+Invoker|Invo|int|R|2|mg st ao|50.3|0
+Silencer|Sil|int|R|54|si mg|50.6|0
+Outworld Destroyer|OD|int|R|2|mg sv md|53.4|0
+Lycan|Lycan|str|M|13|pu ph il ea|48.7|0
+Brewmaster|Brew|all|M|3|in ad ta dp|50.9|0
+Shadow Demon|SD|int|R|54|sv dp|45.4|1
+Lone Druid|LD|agi|R|12|ph pu il|48.8|0
+Chaos Knight|CK|str|M|13|ph il st ta|51.4|0
+Meepo|Meepo|agi|M|21|il gk ea|53.2|0
+Treant Protector|Treant|str|M|45|he ad in ta|45.3|1
+Ogre Magi|Ogre|str|M|54|st ta|50.3|0
+Undying|Undy|str|M|54|he ta|49.7|0
+Rubick|Rubick|int|R|45|st|49.4|1
+Disruptor|Disr|int|R|54|ad si gk|50.5|0
+Nyx Assassin|Nyx|all|M|4|st gk mb iv|53.0|0
+Naga Siren|Naga|agi|M|14|il pu sv ph|49.5|0
+Keeper of the Light|KotL|int|R|54|mg pu sq|49.1|0
+Io|Io|all|R|54|sv he|49.1|0
+Visage|Visage|all|R|24|pu st il|53.0|0
+Slark|Slark|agi|M|1|ph mo gk|50.0|0
+Medusa|Dusa|agi|R|12|ph ao lt md|49.2|0
+Troll Warlord|Troll|agi|R|1|ph lt|51.9|0
+Centaur Warrunner|Cent|str|M|3|in ad ta|49.3|0
+Magnus|Mag|all|M|32|in ad ao|49.3|1
+Timbersaw|Timber|str|M|32|mg ta mo|45.7|0
+Bristleback|BB|str|M|31|ta pa ph|49.3|0
+Tusk|Tusk|str|M|4|in gk st|47.8|1
+Skywrath Mage|Sky|int|R|45|mg ma si bu sq|50.1|0
+Abaddon|Aba|all|M|543|sv dp he|51.5|0
+Elder Titan|ET|str|M|45|ar ma ad|50.2|0
+Legion Commander|LC|str|M|31|bp gk in ph|52.9|0
+Techies|Techies|all|R|45|ao mg|51.0|0
+Ember Spirit|Ember|agi|M|2|mo ao ph|49.1|1
+Earth Spirit|ESp|str|M|43|st si mo in|49.4|1
+Underlord|UL|str|M|3|ad ta ao pu|48.1|1
+Terrorblade|TB|agi|M|1|ph il lt pu|46.7|0
+Phoenix|Phx|str|R|45|ao he st|51.9|0
+Oracle|Ora|int|R|5|sv dp he|50.3|0
+Winter Wyvern|WW|int|R|54|ad sv|49.9|0
+Arc Warden|Arc|all|R|21|ph pu lt|52.3|0
+Monkey King|MK|agi|M|124|ph ad mo|45.7|0
+Dark Willow|DW|int|R|45|st mg|49.0|0
+Pangolier|Pango|all|M|324|in ad mo|46.6|1
+Grimstroke|Grim|int|R|45|st si mg|52.0|0
+Hoodwink|Hood|agi|R|45|st mg mo|47.2|2
+Void Spirit|Void|all|M|2|mo mg st|49.4|1
+Snapfire|Snap|all|R|45|st ao mg|49.3|0
+Mars|Mars|str|M|32|in ad ta|47.5|1
+Ringmaster|Ring|int|R|54|st|48.8|0
+Dawnbreaker|DB|str|M|32|ta he in|52.1|0
+Marci|Marci|all|M|4312|gk ea st|50.0|1
+Primal Beast|PB|str|M|32|in st ta bp|49.6|1
+Muerta|Muerta|int|R|12|ph mg lt|47.6|0
+Kez|Kez|agi|M|12|ph mo gk|45.3|0
+Largo|Largo|str|M|543|he st ta|48.0|0`;
+
+/* A > list : A strongly counters each hero in list */
+const COUNTERS = `Anti-Mage>Medusa,Storm Spirit,Leshrac,Visage,Outworld Destroyer,Tinker
+Axe>Phantom Lancer,Meepo,Naga Siren,Chaos Knight,Terrorblade,Broodmother
+Silencer>Storm Spirit,Puck,Ember Spirit,Void Spirit,Queen of Pain
+Doom>Huskar,Bristleback,Spectre,Wraith King,Phantom Assassin
+Viper>Huskar,Bristleback,Phantom Assassin,Spectre,Wraith King
+Slardar>Riki,Phantom Assassin,Clinkz,Weaver
+Bounty Hunter>Riki,Clinkz,Weaver,Nyx Assassin,Templar Assassin
+Zeus>Riki,Clinkz,Meepo,Weaver
+Nyx Assassin>Medusa,Storm Spirit,Visage,Outworld Destroyer
+Ancient Apparition>Huskar,Alchemist,Necrophos,Lifestealer,Morphling,Abaddon
+Necrophos>Centaur Warrunner,Bristleback,Tidehunter,Timbersaw,Dragon Knight
+Timbersaw>Centaur Warrunner,Axe,Pudge,Underlord,Bristleback
+Shadow Demon>Phantom Lancer,Naga Siren,Terrorblade,Chaos Knight,Meepo
+Earthshaker>Meepo,Phantom Lancer,Naga Siren,Broodmother,Chaos Knight
+Spirit Breaker>Sniper,Drow Ranger,Zeus,Ancient Apparition
+Storm Spirit>Sniper,Drow Ranger,Ancient Apparition,Crystal Maiden
+Pugna>Storm Spirit,Tinker,Invoker,Leshrac
+Disruptor>Storm Spirit,Weaver,Anti-Mage,Queen of Pain,Ember Spirit,Puck,Slark
+Rubick>Magnus,Enigma,Tidehunter,Faceless Void
+Leshrac>Meepo,Naga Siren,Phantom Lancer,Broodmother,Lycan
+Sven>Meepo,Phantom Lancer,Naga Siren
+Gyrocopter>Phantom Lancer,Naga Siren,Broodmother,Meepo
+Medusa>Phantom Lancer,Lina,Zeus,Lion,Skywrath Mage
+Winter Wyvern>Phantom Assassin,Ursa,Troll Warlord,Slark,Lifestealer
+Oracle>Silencer,Doom,Bane,Lion
+Bloodseeker>Slark,Weaver,Queen of Pain,Storm Spirit,Anti-Mage,Ember Spirit
+Lion>Morphling,Medusa
+Legion Commander>Sniper,Drow Ranger,Skywrath Mage
+Batrider>Sniper,Drow Ranger,Huskar
+Lina>Chaos Knight
+Abaddon>Lion,Doom,Bane
+Ember Spirit>Phantom Lancer,Naga Siren
+Clockwerk>Sniper,Drow Ranger
+Lifestealer>Spectre,Bristleback,Centaur Warrunner
+Troll Warlord>Huskar
+Ursa>Spectre,Bristleback`;
+
+/* A + list : strong combos; A - list : awkward together */
+const SYNERGY = `Io+Tiny,Gyrocopter,Lifestealer,Sven,Huskar,Chaos Knight,Spirit Breaker
+Magnus+Sven,Ember Spirit,Monkey King,Troll Warlord,Kunkka
+Dark Seer+Enigma,Faceless Void,Kunkka,Elder Titan,Magnus
+Faceless Void+Skywrath Mage,Lina,Invoker,Jakiro,Witch Doctor,Ancient Apparition,Warlock,Sniper
+Enigma+Queen of Pain,Death Prophet,Gyrocopter,Jakiro,Warlock
+Kunkka+Disruptor,Tidehunter,Lina
+Vengeful Spirit+Phantom Assassin,Templar Assassin,Sniper,Troll Warlord,Drow Ranger
+Elder Titan+Troll Warlord,Sven,Juggernaut
+Skywrath Mage+Lina,Lion,Ancient Apparition
+Oracle+Huskar
+Ogre Magi+Troll Warlord,Huskar
+Disruptor+Jakiro,Mars,Grimstroke
+Grimstroke+Lion,Earth Spirit
+Mars+Snapfire,Jakiro
+Keeper of the Light+Storm Spirit,Leshrac
+Shadow Shaman+Leshrac,Death Prophet,Lycan
+Pugna+Leshrac,Death Prophet
+Treant Protector+Ursa,Bristleback
+Primal Beast+Snapfire
+Faceless Void-Enigma
+Sand King-Enigma`;
+
+const TAG_RU = {ph:"Физ. урон",mg:"Маг. урон",bu:"Бёрст",st:"Контроль",ad:"Массовый контроль",in:"Инициация",ao:"АоЕ урон",il:"Иллюзии/саммоны",mo:"Мобильность",iv:"Невидимость",de:"Детект/вижн",si:"Сайленс",sv:"Сейв",he:"Хил/сустейн",pu:"Пуш",ta:"Танк",lt:"Поздняя игра",ea:"Темп",bp:"Сквозь BKB",br:"Брейк",dp:"Диспел",mb:"Мана-бёрн",ar:"Срез брони",ma:"Усиление маг. урона",ls:"Лайфстил/реген",ah:"Антихил",pa:"Пассивки",md:"Зависит от маны",rg:"Дальний урон",sq:"Хрупкий",gk:"Пик-офф",cs:"Нужен сетап"};
+const ATTR = [["str","Сила","--str"],["agi","Ловкость","--agi"],["int","Интеллект","--int"],["all","Универсальные","--all"]];
+const POSNAME = {1:"Керри",2:"Мид",3:"Оффлейн",4:"Пос. 4",5:"Пос. 5"};
+
+const HEROES = RAW.split("\n").map((line,i)=>{
+  const [name,ab,attr,rng,pos,tags,wr,pro]=line.split("|");
+  const t=new Set(tags.split(" "));
+  const w=parseFloat(wr), p=parseFloat(pro);
+  return {id:i,name,ab,attr,ranged:rng==="R",pos:pos.split("").map(Number),t,wr:w,pro:p,meta:+((w-50)*0.5+p).toFixed(2)};
+});
+const BYNAME = Object.fromEntries(HEROES.map(h=>[h.name,h.id]));
+
+/* Official Dota 2 portraits, loaded from Valve's CDN by the viewer's browser. Falls back to text if blocked. */
+const SLUG = "antimage axe bane bloodseeker crystal_maiden drow_ranger earthshaker juggernaut mirana morphling nevermore phantom_lancer puck pudge razor sand_king storm_spirit sven tiny vengefulspirit windrunner zuus kunkka lina lion shadow_shaman slardar tidehunter witch_doctor lich riki enigma tinker sniper necrolyte warlock beastmaster queenofpain venomancer faceless_void skeleton_king death_prophet phantom_assassin pugna templar_assassin viper luna dragon_knight dazzle rattletrap leshrac furion life_stealer dark_seer clinkz omniknight enchantress huskar night_stalker broodmother bounty_hunter weaver jakiro batrider chen spectre ancient_apparition doom_bringer ursa spirit_breaker gyrocopter alchemist invoker silencer obsidian_destroyer lycan brewmaster shadow_demon lone_druid chaos_knight meepo treant ogre_magi undying rubick disruptor nyx_assassin naga_siren keeper_of_the_light wisp visage slark medusa troll_warlord centaur magnataur shredder bristleback tusk skywrath_mage abaddon elder_titan legion_commander techies ember_spirit earth_spirit abyssal_underlord terrorblade phoenix oracle winter_wyvern arc_warden monkey_king dark_willow pangolier grimstroke hoodwink void_spirit snapfire mars ringmaster dawnbreaker marci primal_beast muerta kez largo".split(" ");
+HEROES.forEach((h,i)=>h.img="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/"+SLUG[i]+".png");
+let IMG_OK = true; // flips to false after the first failed load, so the page switches to text tiles everywhere
+function imgFail(el){ if(IMG_OK){IMG_OK=false;document.body.classList.add("noimg")} const p=el.parentNode; if(p&&p.classList.contains("img")) p.classList.remove("img"); el.remove(); }
+const IMG = (h,cls="")=> IMG_OK?`<img src="${h.img}" alt="${h.name}" class="${cls}" loading="lazy" draggable="false" onerror="imgFail(this)">`:"";
+const N = HEROES.length;
+
+/* ===== PAIR MODEL ===== */
+const EXC = Array.from({length:N},()=>new Float32Array(N));
+const EXS = Array.from({length:N},()=>new Float32Array(N));
+COUNTERS.split("\n").forEach(l=>{const [a,list]=l.split(">");list.split(",").forEach(b=>{EXC[BYNAME[a]][BYNAME[b.trim()]]=2})});
+SYNERGY.split("\n").forEach(l=>{
+  const neg=l.includes("-")&&!l.includes("+");
+  const [a,list]=l.split(neg?"-":"+");
+  list.split(",").forEach(b=>{const x=BYNAME[a],y=BYNAME[b.trim()];const v=neg?-1.2:2;EXS[x][y]=v;EXS[y][x]=v});
+});
+
+function ctrRules(A,B){ // how much A counters B, with reasons
+  const r=[];const a=A.t,b=B.t;
+  if(EXC[A.id][B.id]) r.push([2,"известный контрпик"]);
+  if(a.has("ao")&&b.has("il")) r.push([1.2,"АоЕ против иллюзий"]);
+  if(a.has("si")&&b.has("mo")) r.push([0.8,"сайленс против мобильности"]);
+  if(a.has("de")&&b.has("iv")) r.push([1.5,"детект против инвиза"]);
+  if(a.has("br")&&b.has("pa")) r.push([1.4,"брейк пассивок"]);
+  if(a.has("ah")&&b.has("ls")) r.push([1.0,"антихил против сустейна"]);
+  if(a.has("mb")&&b.has("md")) r.push([1.0,"сжигает ману"]);
+  if(a.has("bp")&&b.has("lt")&&b.has("ph")) r.push([0.4,"контроль сквозь BKB"]);
+  if(a.has("gk")&&b.has("sq")) r.push([0.4,"ловит хрупкого"]);
+  if(a.has("ta")&&b.has("bu")) r.push([0.3,"переживает бёрст"]);
+  return r;
+}
+function synRules(A,B){
+  const r=[];const a=A.t,b=B.t;
+  const ex=EXS[A.id][B.id]; if(ex) r.push([ex,ex>0?"известная связка":"мешают друг другу"]);
+  const one=(x,y,v,txt)=>{ if((a.has(x)&&b.has(y))||(a.has(y)&&b.has(x))) r.push([v,txt]) };
+  one("ad","ao",0.6,"массовый контроль + АоЕ");
+  one("in","bu",0.4,"инициация + бёрст");
+  one("ar","ph",0.8,"срез брони + физ. урон");
+  one("ma","mg",0.8,"усиление маг. урона");
+  one("ma","bu",0.5,"усиление бёрста");
+  one("sv","lt",0.5,"сейв для керри");
+  one("st","gk",0.3,"цепочка контроля");
+  if(a.has("pu")&&b.has("pu")) r.push([0.4,"совместный пуш"]);
+  if(a.has("lt")&&b.has("lt")) r.push([-0.4,"две жадные фермы"]);
+  if(a.has("cs")&&b.has("ad")&&!b.has("cs")) r.push([0.3,"доп. сетап под ульту"]);
+  return r;
+}
+const sum=r=>r.reduce((s,x)=>s+x[0],0);
+const CTR = Array.from({length:N},()=>new Float32Array(N));
+const SYN = Array.from({length:N},()=>new Float32Array(N));
+for(let i=0;i<N;i++)for(let j=0;j<N;j++){ if(i===j)continue; CTR[i][j]=sum(ctrRules(HEROES[i],HEROES[j])); SYN[i][j]=sum(synRules(HEROES[i],HEROES[j])); }
+
+/* ===== DRAFT ORDER (7.34+ CM, 24 steps) ===== */
+const ORDER = "FB FB SB SB FB SB SB FP SP FB FB SB SP FP FP SP SP FP FB SB FB SB FP SP".split(" ").map(s=>({side:s[0],act:s[1]}));
+const PHASE = i=> i<7?"Баны · фаза 1": i<9?"Пики · фаза 1": i<12?"Баны · фаза 2": i<18?"Пики · фаза 2": i<22?"Баны · фаза 3":"Пики · фаза 3";
+const STEP_TIME = i=> i<7?15:30;
+const RESERVE = 130;
+
+/* ===== STATE ===== */
+const S = {
+  playerSide:"rad", playerFirst:true, diff:"normal", timer:false, hints:true,
+  draft:Array(24).fill(null), step:0, sel:null, log:[], history:[],
+  stepLeft:15, reserve:{P:RESERVE,A:RESERVE}, aiTimer:null, filterPos:0, search:""
+};
+const teamOfStep = i => (ORDER[i].side==="F") === S.playerFirst ? "P" : "A";
+const sideOf = t => t==="P"? S.playerSide : (S.playerSide==="rad"?"dire":"rad");
+const other = t => t==="P"?"A":"P";
+const done = ()=> S.step>=24;
+function picks(team){const r=[];ORDER.forEach((o,i)=>{if(o.act==="P"&&teamOfStep(i)===team&&S.draft[i]!=null&&S.draft[i]>=0)r.push(S.draft[i])});return r}
+function bans(team){const r=[];ORDER.forEach((o,i)=>{if(o.act==="B"&&teamOfStep(i)===team&&i<S.step)r.push(S.draft[i])});return r}
+function unavailable(){return new Set(S.draft.filter(x=>x!=null&&x>=0))}
+
+/* ===== EVALUATION ===== */
+const POSFIT=[3,2,1.2,0.8];
+const fit=(h,p)=>{const i=h.pos.indexOf(p);return i<0?-4:(POSFIT[i]??0.8)};
+function bestAssign(ids){
+  if(!ids.length) return {score:0,map:[]};
+  let best=-1e9,bestMap=null;const used=[0,0,0,0,0,0],cur=[];
+  (function rec(i,s){
+    if(i===ids.length){if(s>best){best=s;bestMap=cur.slice()}return}
+    for(let p=1;p<=5;p++){if(used[p])continue;used[p]=1;cur[i]=p;rec(i+1,s+fit(HEROES[ids[i]],p));used[p]=0}
+  })(0,0);
+  return {score:best,map:bestMap};
+}
+function profile(ids){
+  const c=k=>ids.filter(id=>HEROES[id].t.has(k)).length;
+  return {
+    control: ids.reduce((s,id)=>s+(HEROES[id].t.has("ad")?1.5:HEROES[id].t.has("st")?1:HEROES[id].t.has("si")?0.5:0),0),
+    init:c("in"), aoe:c("ao")+c("ad"), save:c("sv")+c("he")*0.5, push:c("pu"), late:c("lt"),
+    tempo:c("ea")+c("gk")*0.5, ph:c("ph"), mg:c("mg")+c("bu")*0.5, de:c("de"), iv:c("iv"), il:c("il"), ao:c("ao")
+  };
+}
+function needBonus(id,allies,enemies){
+  const h=HEROES[id],t=h.t,p=profile(allies),e=profile(enemies),r=[];
+  if(p.control<3&&(t.has("st")||t.has("ad"))) r.push([0.8,"добавляет контроль"]);
+  if(p.init===0&&t.has("in")&&allies.length>=1) r.push([0.9,"нужна инициация"]);
+  if(p.save===0&&t.has("sv")&&allies.length>=2) r.push([0.5,"нет сейва"]);
+  if(p.ph>=3&&p.mg<1&&(t.has("mg")||t.has("bu"))) r.push([0.8,"баланс урона: маг."]);
+  if(p.mg>=3&&p.ph<=1&&t.has("ph")) r.push([0.8,"баланс урона: физ."]);
+  if(e.iv>0&&p.de===0&&t.has("de")) r.push([0.9,"детект против инвиза"]);
+  if(e.il>0&&p.ao===0&&t.has("ao")) r.push([0.7,"АоЕ против иллюзий"]);
+  if(allies.length>=3&&p.late===0&&t.has("lt")) r.push([0.6,"нужна поздняя игра"]);
+  return r;
+}
+function evalHero(id,team){
+  const allies=picks(team),enemies=picks(other(team)),h=HEROES[id];
+  const before=bestAssign(allies).score, after=bestAssign([...allies,id]).score;
+  const d=after-before; const role=d>=0?d*0.5:d*1.2;
+  const syn=allies.reduce((s,a)=>s+SYN[id][a],0);
+  const ctr=enemies.reduce((s,e)=>s+CTR[id][e],0);
+  const thr=enemies.reduce((s,e)=>s+CTR[e][id],0);
+  const need=needBonus(id,allies,enemies); const nd=sum(need);
+  const total=h.meta*0.9+role+syn+ctr*0.9-thr*0.9+nd;
+  return {total,meta:h.meta,role,syn,ctr,thr,need,offrole:d<0};
+}
+const banValue=(id,team)=>evalHero(id,other(team)).total;
+function scoreAll(team,act){
+  const un=unavailable();
+  return HEROES.filter(h=>!un.has(h.id)).map(h=>({id:h.id,v:act==="P"?evalHero(h.id,team).total:banValue(h.id,team)})).sort((a,b)=>b.v-a.v);
+}
+function shortReason(id,team,act){
+  if(act==="B"){
+    const opp=other(team),e=evalHero(id,opp),bits=[];
+    if(e.syn>1) bits.push("связка у соперника");
+    if(e.ctr>1) bits.push("контрит твоих");
+    if(e.meta>1.2) bits.push("сильная мета");
+    if(e.need.length) bits.push("закрывает дыру соперника");
+    return bits.join(" · ")||"сильный герой для соперника";
+  }
+  const e=evalHero(id,team),bits=[];
+  const allies=picks(team),enemies=picks(other(team));
+  const bs=allies.map(a=>[a,SYN[id][a]]).sort((x,y)=>y[1]-x[1])[0];
+  if(bs&&bs[1]>=0.8) bits.push("с "+HEROES[bs[0]].ab);
+  const bc=enemies.map(x=>[x,CTR[id][x]]).sort((x,y)=>y[1]-x[1])[0];
+  if(bc&&bc[1]>=0.8) bits.push("контрит "+HEROES[bc[0]].ab);
+  if(e.need.length) bits.push(e.need[0][1]);
+  if(e.meta>1.2&&bits.length<2) bits.push("сильная мета");
+  if(!bits.length) bits.push("позиции: "+HEROES[id].pos.join("/"));
+  return bits.join(" · ");
+}
+
+/* ===== AI ===== */
+function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+function aiChoose(){
+  const act=ORDER[S.step].act, sd={easy:2.2,normal:0.9,hard:0.3}[S.diff];
+  const list=scoreAll("A",act).map(x=>({...x,n:x.v+gauss()*sd}));
+  list.sort((a,b)=>b.n-a.n);
+  return list[0].id;
+}
+function scheduleAI(){
+  clearTimeout(S.aiTimer);
+  if(done()||teamOfStep(S.step)!=="A") return;
+  S.aiTimer=setTimeout(()=>{ if(!done()&&teamOfStep(S.step)==="A") commit(aiChoose(),"A") }, 750);
+}
+
+/* ===== ACTIONS ===== */
+function gradeOf(id,team,act){
+  const list=scoreAll(team,act); const rank=list.findIndex(x=>x.id===id)+1;
+  const cls=rank<=3?"g-a":rank<=10?"g-b":"g-c";
+  const txt=rank<=3?"отлично":rank<=10?"неплохо":"можно лучше";
+  return {rank,cls,txt,best:list[0].id};
+}
+function commit(id,team){
+  const i=S.step, act=ORDER[i].act;
+  if(team==="P") S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve}));
+  const g = (team==="P" && id>=0) ? gradeOf(id,team,act) : null;
+  S.draft[i]=id; S.step++; S.sel=null;
+  S.log.push({i,team,act,id,g});
+  S.stepLeft=done()?0:STEP_TIME(S.step);
+  render(); scheduleAI();
+}
+function playerConfirm(){
+  if(done()||teamOfStep(S.step)!=="P"||S.sel==null) return;
+  if(unavailable().has(S.sel)) return;
+  commit(S.sel,"P");
+}
+function undo(){
+  if(!S.history.length) return;
+  clearTimeout(S.aiTimer);
+  const h=JSON.parse(S.history.pop());
+  S.draft=h.draft;S.step=h.step;S.log=h.log;S.reserve=h.reserve;S.sel=null;S.stepLeft=STEP_TIME(S.step);
+  render(); scheduleAI();
+}
+function newDraft(){
+  clearTimeout(S.aiTimer);
+  S.playerSide=$("#setSide").value; S.diff=$("#setDiff").value;
+  const o=$("#setOrder").value; S.playerFirst=o==="first"?true:o==="second"?false:Math.random()<.5;
+  S.timer=$("#setTimer").checked;
+  S.draft=Array(24).fill(null);S.step=0;S.sel=null;S.log=[];S.history=[];
+  S.reserve={P:RESERVE,A:RESERVE};S.stepLeft=STEP_TIME(0);
+  render(); scheduleAI();
+}
+
+/* timer */
+setInterval(()=>{
+  if(!S.timer||done()||teamOfStep(S.step)!=="P") return;
+  if(S.stepLeft>0) S.stepLeft=Math.max(0,S.stepLeft-0.25);
+  else S.reserve.P=Math.max(0,S.reserve.P-0.25);
+  if(S.stepLeft<=0&&S.reserve.P<=0){
+    if(ORDER[S.step].act==="B") commit(-1,"P");
+    else { const un=unavailable(); const pool=HEROES.filter(h=>!un.has(h.id)); commit(pool[Math.floor(Math.random()*pool.length)].id,"P"); }
+    return;
+  }
+  renderTurn();
+},250);
+
+/* ===== RENDER ===== */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=v=>(v>0?"+":"")+v.toFixed(1);
+const fmtT=s=>{s=Math.ceil(s);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+
+function buildPool(){
+  $("#pool").innerHTML=ATTR.map(([k,label,c])=>`<div class="attr" style="--c:var(${c})"><h3>${label}</h3><div class="grid">${
+    HEROES.filter(h=>h.attr===k).sort((a,b)=>a.name.localeCompare(b.name)).map(h=>
+    `<button class="hero img" draggable="true" data-id="${h.id}" title="${esc(h.name)}">${IMG(h)}<span class="ab">${esc(h.ab)}</span><span class="nm">${esc(h.name)}</span></button>`).join("")
+  }</div></div>`).join("");
+  $("#posChips").innerHTML=[0,1,2,3,4,5].map(p=>`<button class="chip" data-pos="${p}">${p?p+" · "+POSNAME[p]:"Все"}</button>`).join("");
+}
+
+function renderTimeline(){
+  $("#timeline").innerHTML=ORDER.map((o,i)=>{
+    const team=teamOfStep(i),side=sideOf(team),v=S.draft[i];
+    const lbl= v==null? (o.act==="B"?"бан":"пик") : v<0?"—":HEROES[v].ab;
+    const gap=(i===7||i===9||i===12||i===18||i===22)?" gap":"";
+    return `<div class="tl ${side} ${o.act==="B"?"ban":"pick"}${i===S.step?" cur":""}${gap}" title="${i+1}. ${team==="P"?"Ты":"Компьютер"} · ${o.act==="B"?"бан":"пик"}${v!=null&&v>=0?": "+esc(HEROES[v].name):""}">${v!=null&&v>=0?IMG(HEROES[v]):""}<span class="n">${i+1}</span><span class="v">${esc(lbl)}</span></div>`;
+  }).join("");
+}
+
+function teamHTML(side){
+  const team = sideOf("P")===side?"P":"A";
+  const ps=picks(team), assign=bestAssign(ps);
+  const total=ORDER.filter((o,i)=>o.act==="P"&&teamOfStep(i)===team).length;
+  const slots=[];for(let k=0;k<5;k++){const id=ps[k];
+    slots.push(id==null?`<div class="slot empty">пик ${k+1}</div>`:`<div class="slot">${IMG(HEROES[id],"pimg")}<b style="font-family:var(--f-disp);font-size:17px">${esc(HEROES[id].ab)}</b><span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(HEROES[id].name)}</span><span class="pos">поз. ${assign.map[k]}</span></div>`)}
+  const bl=[];ORDER.forEach((o,i)=>{if(o.act==="B"&&teamOfStep(i)===team){const v=S.draft[i];bl.push(v==null?`<div class="b e">—</div>`:v<0?`<div class="b e">пропуск</div>`:`<div class="b" title="${esc(HEROES[v].name)}">${IMG(HEROES[v])}${esc(HEROES[v].ab)}</div>`)}});
+  const p=profile(ps);
+  const m=(l,v,max)=>`<div class="meter"><span>${l}</span><span class="bar"><i style="width:${Math.min(100,v/max*100)}%"></i></span><b>${+v.toFixed(1)}</b></div>`;
+  const first = (team==="P")===S.playerFirst;
+  const dz = k => team==="P" ? ` dz" data-zone="${k}` : "";
+  return `<h2>${side==="rad"?"Radiant":"Dire"} <span>${team==="P"?'<span class="you">ТЫ</span>':"компьютер"} · ${first?"1-й пик":"2-й пик"}</span></h2>
+  <div class="slots${dz("P")}">${slots.join("")}</div>
+  <div class="sub">Баны</div><div class="bans${dz("B")}">${bl.join("")}</div>
+  <div class="sub">Профиль драфта</div>
+  <div class="meters">${m("Контроль",p.control,6)}${m("Инициация",p.init,3)}${m("Тимфайт",p.aoe,5)}${m("Сейв/хил",p.save,3)}${m("Пуш",p.push,4)}${m("Физ. урон",p.ph,4)}${m("Маг. урон",p.mg,4)}${m("Лейт",p.late,3)}</div>`;
+}
+function renderTeams(){ $("#teamRad").innerHTML=teamHTML("rad"); $("#teamDire").innerHTML=teamHTML("dire"); }
+
+function renderTurn(){
+  const el=$("#turn");
+  if(done()){el.className="turn";el.innerHTML=`<span class="who">Драфт завершён</span><span class="phase">разбор ниже · «Отменить ход» вернёт тебя к последнему действию</span>`;return}
+  const team=teamOfStep(S.step),act=ORDER[S.step].act,mine=team==="P";
+  el.className="turn"+(mine?" mine":"");
+  const clock=S.timer?`<span class="clock">ход <b>${fmtT(mine?S.stepLeft:STEP_TIME(S.step))}</b> резерв <b>${fmtT(S.reserve.P)}</b></span>`:"";
+  el.innerHTML=`<span class="who">${mine?(act==="B"?"Твой бан":"Твой пик"):(act==="B"?"Компьютер банит…":"Компьютер пикает…")}</span><span class="phase">${PHASE(S.step)} · ход ${S.step+1} из 24</span>${clock}`;
+}
+
+function renderPool(){
+  const un=unavailable(),q=S.search.trim().toLowerCase();
+  const myTurn=!done()&&teamOfStep(S.step)==="P", act=done()?"P":ORDER[S.step].act;
+  const pickedBy={};ORDER.forEach((o,i)=>{const v=S.draft[i];if(v!=null&&v>=0&&o.act==="P")pickedBy[v]=sideOf(teamOfStep(i))});
+  document.querySelectorAll(".hero").forEach(b=>{
+    const id=+b.dataset.id,h=HEROES[id];
+    const match=(!q||h.name.toLowerCase().includes(q)||h.ab.toLowerCase().includes(q))&&(!S.filterPos||h.pos.includes(S.filterPos));
+    b.className="hero"+(b.querySelector("img")?" img":"")+(un.has(id)?" used"+(pickedBy[id]?" p-"+pickedBy[id]:""):"")+(match?"":" dim")+(S.sel===id?" sel":"");
+  });
+  document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",+c.dataset.pos===S.filterPos));
+}
+
+function relList(rows,cls){
+  if(!rows.length) return `<span class="muted">—</span>`;
+  return rows.map(([id,v,why])=>`<div class="row" title="${esc(why)}"><span>${esc(HEROES[id].name)}</span><span class="${cls}">${fmt(v)}</span></div><div class="why">${esc(why)}</div>`).join("");
+}
+function renderDetail(){
+  const el=$("#detail");
+  const id=S.sel;
+  if(id==null){
+    el.innerHTML=`<h4>Герой</h4><p class="muted" style="margin:0">Нажми на героя, чтобы увидеть его связки с твоими пиками, кого он контрит и кто опасен для него. Двойной клик или Enter подтверждает выбор.</p>`;return}
+  const h=HEROES[id], un=unavailable().has(id);
+  const myTurn=!done()&&teamOfStep(S.step)==="P", act=done()?"P":ORDER[S.step].act;
+  const me=picks("P"),en=picks("A");
+  const reasons=(rs)=>rs.sort((a,b)=>b[0]-a[0]).map(x=>x[1]).join(", ");
+  const synR=me.map(a=>[a,SYN[id][a],reasons(synRules(h,HEROES[a]))]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
+  const ctrR=en.map(e=>[e,CTR[id][e],reasons(ctrRules(h,HEROES[e]))]).filter(x=>x[1]>=0.3).sort((a,b)=>b[1]-a[1]);
+  const thrR=en.map(e=>[e,-CTR[e][id],reasons(ctrRules(HEROES[e],h))]).filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]);
+  const eP=evalHero(id,"P"), eA=evalHero(id,"A");
+  const attrName=ATTR.find(a=>a[0]===h.attr);
+  el.innerHTML=`<div class="dh"><span class="big">${esc(h.name)}</span><span class="meta" style="color:var(${attrName[2]})">${attrName[1]}</span><span class="meta">${h.ranged?"дальний бой":"ближний бой"} · позиции ${h.pos.join(", ")} · паб WR ${h.wr.toFixed(1)}%${h.pro?" · про-приоритет":""}</span></div>
+  <div class="tags">${[...h.t].map(k=>`<span class="tag">${TAG_RU[k]||k}</span>`).join("")}</div>
+  <div class="cols3">
+    <div class="rel"><div class="sub">С твоими пиками</div>${relList(synR,"")}</div>
+    <div class="rel"><div class="sub">Контрит врагов</div>${relList(ctrR,"pos")}</div>
+    <div class="rel"><div class="sub">Опасны для него</div>${relList(thrR,"neg")}</div>
+  </div>
+  <div class="score">для тебя <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
+  <div class="score">для соперника <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · ему не по ролям":""}</div>
+  <div class="actions">${un?`<span class="muted">Герой уже занят или забанен</span>`:myTurn?`<button class="btn primary" id="confirmBtn">${act==="B"?"Забанить":"Пикнуть"} ${esc(h.ab)}</button>`:`<span class="muted">Сейчас ход компьютера</span>`}</div>`;
+  const cb=$("#confirmBtn"); if(cb) cb.onclick=playerConfirm;
+}
+
+function renderHints(){
+  const el=$("#hintsCard");
+  if(!S.hints){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Выключены. Включи галочку сверху, чтобы видеть топ вариантов и оценку каждого хода.</p>`;return}
+  if(done()||teamOfStep(S.step)!=="P"){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">${done()?"Драфт завершён.":"Появятся на твоём ходу."}</p>`;return}
+  const act=ORDER[S.step].act;
+  const list=scoreAll("P",act).slice(0,6);
+  el.innerHTML=`<h4>${act==="B"?"Кого банить":"Кого пикать"}</h4><div class="hints">${list.map(x=>`<button class="hint-row" data-id="${x.id}"><span class="ab">${esc(HEROES[x.id].ab)}</span><span class="r">${esc(shortReason(x.id,"P",act))}</span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`;
+  el.querySelectorAll(".hint-row").forEach(b=>b.onclick=()=>{S.sel=+b.dataset.id;renderPool();renderDetail()});
+}
+
+function renderLog(){
+  $("#log").innerHTML=S.log.length?S.log.map(e=>{
+    const who=e.team==="P"?"Ты":"ИИ", what=e.act==="B"?"бан":"пик", name=e.id<0?"пропуск":HEROES[e.id].name;
+    const g=e.g?`<span class="grade ${e.g.cls}" title="Лучший вариант по модели: ${esc(HEROES[e.g.best].name)}">#${e.g.rank} ${e.g.txt}</span>`:"";
+    return `<div class="l"><span class="n">${e.i+1}</span><span>${who} · ${what}: <b>${esc(name)}</b></span>${g}</div>`}).join(""):`<span class="muted">Пока пусто</span>`;
+  const el=$("#log"); el.scrollTop=el.scrollHeight;
+}
+
+function teamScore(team){
+  const ids=picks(team),en=picks(other(team)),a=bestAssign(ids),p=profile(ids),pe=profile(en);
+  let syn=0;const synPairs=[];
+  for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){const v=(SYN[ids[i]][ids[j]]+SYN[ids[j]][ids[i]])/2;syn+=v;if(v>=0.8||v<=-0.8)synPairs.push([ids[i],ids[j],v])}
+  let ctr=0;const ctrPairs=[];
+  ids.forEach(x=>en.forEach(y=>{const v=CTR[x][y];ctr+=v;if(v>=1.2)ctrPairs.push([x,y,v])}));
+  const meta=ids.reduce((s,id)=>s+HEROES[id].meta,0);
+  const checks=[
+    ["Контроль",p.control>=3],["Инициация",p.init>=1],["Тимфайт",p.aoe>=3],["Сейв или хил",p.save>=1],
+    ["Оба типа урона",p.ph>=1&&p.mg>=1],["Пуш",p.push>=2],["Поздняя игра",p.late>=1],["Темп",p.tempo>=1],
+  ];
+  if(pe.iv>0) checks.push(["Детект против инвиза",p.de>=1]);
+  if(pe.il>0) checks.push(["АоЕ против иллюзий",p.ao>=2]);
+  const comp=checks.filter(c=>c[1]).length*0.6-checks.filter(c=>!c[1]).length*0.6;
+  const role=(a.score-12)*0.4;
+  return {total:meta*0.6+syn+ctr*0.9+comp+role,meta,syn,ctr,comp,role,checks,synPairs,ctrPairs,assign:a,ids};
+}
+function renderAnalysis(){
+  const w=$("#analysisWrap");
+  if(!done()){w.hidden=true;w.innerHTML="";return}
+  w.hidden=false;
+  const P=teamScore("P"),A=teamScore("A");
+  const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;
+  const pr=1/(1+Math.exp(-(radT.total-dirT.total)/6));
+  const card=(t,label)=>{
+    const order=t.ids.map((id,k)=>[t.assign.map[k],id]).sort((a,b)=>a[0]-b[0]);
+    return `<div class="card"><h4>${label}</h4>
+    <div class="lineup">${order.map(([p,id])=>`<div><span class="p">${p}</span><span>${esc(HEROES[id].name)}</span>${fit(HEROES[id],p)<0?'<span class="neg" style="font-size:12px">вне роли</span>':""}</div>`).join("")}</div>
+    <div class="score">итог <b>${t.total.toFixed(1)}</b> · мета ${fmt(t.meta*0.6)} · синергия ${fmt(t.syn)} · контрпики ${fmt(t.ctr*0.9)} · состав ${fmt(t.comp)} · роли ${fmt(t.role)}</div>
+    <div class="check">${t.checks.map(([n,ok])=>`<span class="${ok?"pos":"neg"}">${ok?"✓":"✗"}</span><span>${n}</span>`).join("")}</div>
+    ${t.synPairs.length?`<div class="sub">Связки</div><div class="muted">${t.synPairs.sort((a,b)=>b[2]-a[2]).map(([a,b,v])=>`<span class="${v>0?"pos":"neg"}">${esc(HEROES[a].ab)} + ${esc(HEROES[b].ab)}</span>`).join(", ")}</div>`:""}
+    ${t.ctrPairs.length?`<div class="sub">Ключевые контрпики</div><div class="muted">${t.ctrPairs.sort((a,b)=>b[2]-a[2]).slice(0,6).map(([a,b])=>`${esc(HEROES[a].ab)} → ${esc(HEROES[b].ab)}`).join(", ")}</div>`:""}
+    </div>`};
+  const graded=S.log.filter(e=>e.g);const avg=graded.length?graded.reduce((s,e)=>s+e.g.rank,0)/graded.length:0;
+  w.innerHTML=`<div class="analysis"><div class="card verdict"><h4>Прогноз модели</h4>
+    <div class="wbar"><div class="r" style="width:${(pr*100).toFixed(0)}%">Radiant ${(pr*100).toFixed(0)}%</div><div class="d" style="width:${(100-pr*100).toFixed(0)}%">${(100-pr*100).toFixed(0)}% Dire</div></div>
+    <div class="muted">Твоя сторона: ${sideOf("P")==="rad"?"Radiant":"Dire"}. Средний ранг твоих ходов по модели: ${avg?avg.toFixed(1):"—"} (1 = лучший вариант).</div></div>
+    <div class="ateams">${card(radT,"Radiant"+(sideOf("P")==="rad"?" · ты":""))}${card(dirT,"Dire"+(sideOf("P")==="dire"?" · ты":""))}</div></div>`;
+}
+
+function render(){renderTimeline();renderTeams();renderTurn();renderPool();renderDetail();renderHints();renderLog();renderAnalysis();$("#undoBtn").disabled=!S.history.length}
+
+/* ===== EVENTS ===== */
+buildPool();
+$("#pool").addEventListener("click",e=>{const b=e.target.closest(".hero");if(!b)return;const id=+b.dataset.id;S.sel=id;renderPool();renderDetail()});
+$("#pool").addEventListener("dblclick",e=>{const b=e.target.closest(".hero");if(!b)return;S.sel=+b.dataset.id;playerConfirm()});
+$("#posChips").addEventListener("click",e=>{const c=e.target.closest(".chip");if(!c)return;S.filterPos=+c.dataset.pos;renderPool()});
+
+/* drag & drop: hero tile -> your pick slots / ban slots / current timeline cell */
+let dragId=null;
+const myAct=()=> (!done()&&teamOfStep(S.step)==="P") ? ORDER[S.step].act : null;
+function markZones(){
+  const act=myAct();
+  document.querySelectorAll(".dz").forEach(z=>z.classList.toggle("ok",z.dataset.zone===act));
+  const cur=document.querySelector(".tl.cur"); if(cur){cur.classList.toggle("dz",!!act);cur.classList.toggle("ok",!!act);cur.dataset.zone=act||""}
+}
+function zoneAt(target){const z=target.closest&&target.closest(".dz.ok");return z&&dragId!=null?z:null}
+function clearDrag(){dragId=null;document.body.classList.remove("dnd");document.querySelectorAll(".dz.over").forEach(z=>z.classList.remove("over"))}
+$("#pool").addEventListener("dragstart",e=>{
+  const b=e.target.closest(".hero"); if(!b) return;
+  const id=+b.dataset.id;
+  if(unavailable().has(id)||!myAct()){e.preventDefault();return}
+  dragId=id; S.sel=id;
+  e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",String(id));
+  const img=b.querySelector("img"); if(img) e.dataTransfer.setDragImage(img,30,17);
+  document.body.classList.add("dnd"); markZones(); renderPool(); renderDetail();
+});
+document.addEventListener("dragover",e=>{
+  if(dragId==null) return;
+  const z=zoneAt(e.target);
+  document.querySelectorAll(".dz.over").forEach(x=>{if(x!==z)x.classList.remove("over")});
+  if(z){e.preventDefault();e.dataTransfer.dropEffect="move";z.classList.add("over")}
+});
+document.addEventListener("drop",e=>{
+  if(dragId==null) return;
+  const z=zoneAt(e.target); const id=dragId; clearDrag();
+  if(!z) return;
+  e.preventDefault(); S.sel=id; playerConfirm();
+});
+document.addEventListener("dragend",clearDrag);
+$("#search").addEventListener("input",e=>{S.search=e.target.value;renderPool()});
+$("#search").addEventListener("keydown",e=>{
+  if(e.key!=="Enter")return;
+  const q=S.search.trim().toLowerCase(),un=unavailable();
+  const m=HEROES.filter(h=>!un.has(h.id)&&(h.name.toLowerCase().includes(q)||h.ab.toLowerCase().includes(q)));
+  if(S.sel==null&&m.length===1){S.sel=m[0].id;renderPool();renderDetail();return}
+  if(S.sel!=null) playerConfirm();
+});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.tagName!=="INPUT"&&e.target.tagName!=="BUTTON"&&e.target.tagName!=="SELECT")playerConfirm()});
+$("#newBtn").onclick=newDraft;
+$("#undoBtn").onclick=undo;
+$("#setHints").onchange=e=>{S.hints=e.target.checked;render()};
+$("#setTimer").onchange=e=>{S.timer=e.target.checked;S.stepLeft=STEP_TIME(S.step);renderTurn()};
+newDraft();
+</script>
