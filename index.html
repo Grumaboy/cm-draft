@@ -32,6 +32,38 @@ button{cursor:pointer}
 .stz a{color:var(--gold)}
 .stz-row{display:flex;flex-wrap:wrap;gap:8px}
 .stz-row input{flex:1 1 260px;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:7px 10px}
+/* history */
+body.view-history .settings, body.view-history #timeline, body.view-history .board, body.view-history #stratzPanel{display:none!important}
+.hist{display:flex;flex-direction:column;gap:12px}
+.hist-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.hist-head h2{margin:0;font-family:var(--f-disp);font-size:26px;letter-spacing:.05em;text-transform:uppercase;margin-right:auto}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px}
+.stat-row{display:flex;align-items:center;gap:8px;font-size:13px}
+.stat-row .bar{flex:1;height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
+.stat-row .bar i{display:block;height:100%;background:var(--gold)}
+.stat-row b{font-family:var(--f-mono);font-weight:500;font-size:12px;min-width:22px;text-align:right}
+.kpis{display:flex;flex-wrap:wrap;gap:8px 24px}
+.kpi{display:flex;flex-direction:column}
+.kpi b{font-family:var(--f-disp);font-size:28px;line-height:1}
+.kpi span{font-size:12px;color:var(--muted)}
+.hlist{display:flex;flex-direction:column;gap:6px}
+.hitem{display:grid;grid-template-columns:minmax(120px,1.1fr) minmax(0,2fr) minmax(0,2fr) 70px;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;text-align:left}
+.hitem:hover{border-color:var(--gold)}
+.hitem .when{font-size:12px;color:var(--muted)}
+.hitem .ttl{font-weight:600;font-size:14px}
+.five{display:flex;gap:3px;min-width:0}
+.five img,.five .ph{width:46px;aspect-ratio:16/9;object-fit:cover;border-radius:3px;flex:none}
+.five .ph{background:var(--panel2);font-family:var(--f-disp);font-size:11px;display:flex;align-items:center;justify-content:center}
+.five.rad{box-shadow:inset 3px 0 0 var(--rad);padding-left:6px} .five.dire{box-shadow:inset 3px 0 0 var(--dire);padding-left:6px}
+.badge{font-size:11px;border-radius:3px;padding:1px 6px;border:1px solid var(--line);color:var(--muted)}
+.prob{font-family:var(--f-mono);font-size:14px;text-align:right}
+.hdet-top{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.hdet-top input{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 10px;font-size:16px;font-weight:600;flex:1 1 240px;min-width:0}
+.hdet .timeline{pointer-events:none}
+.bans-row{display:flex;flex-wrap:wrap;gap:4px}
+.bans-row .b{width:52px;aspect-ratio:16/9;position:relative;border-radius:3px;overflow:hidden;background:var(--panel2);font-family:var(--f-disp);font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.bans-row .b img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:grayscale(1) brightness(.6)}
+@media (max-width:720px){.hitem{grid-template-columns:minmax(0,1fr) 60px}.hitem .five{grid-column:1/-1}}
 /* top navigation with mode tabs */
 .nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
 .nav-in{max-width:1500px;margin:0 auto;padding-inline:16px;display:flex;align-items:stretch;gap:8px 24px;flex-wrap:wrap}
@@ -211,12 +243,13 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     <div class="tabs" role="tablist">
       <button class="tab on" data-mode="ai" role="tab">Тренировка</button>
       <button class="tab" data-mode="manual" role="tab">Турнир</button>
+      <button class="tab" data-mode="history" role="tab">История</button>
     </div>
     <span class="nav-hint" id="navHint">драфт против компьютера</span>
     <button class="nav-btn" id="stratzNav">Подключить STRATZ</button>
   </div>
 </nav>
-<div class="wrap">
+<div class="wrap" id="appWrap">
   <div class="top">
     <div class="brand">CM Драфт-тренажёр<small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
     <div class="settings">
@@ -244,6 +277,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     </div>
     <div id="stratzMsg" class="muted"></div>
   </section>
+  <section id="historyView" class="hist" hidden style="display:none"></section>
   <div class="timeline" id="timeline"></div>
 
   <div class="board">
@@ -802,8 +836,8 @@ function aiChoose(){
 }
 function scheduleAI(){
   clearTimeout(S.aiTimer);
-  if(MAN()||done()||teamOfStep(S.step)!=="A") return;
-  S.aiTimer=setTimeout(()=>{ if(!MAN()&&!done()&&teamOfStep(S.step)==="A") commit(aiChoose(),"A") }, 750);
+  if(VIEW==="history"||MAN()||done()||teamOfStep(S.step)!=="A") return;
+  S.aiTimer=setTimeout(()=>{ if(VIEW!=="history"&&!MAN()&&!done()&&teamOfStep(S.step)==="A") commit(aiChoose(),"A") }, 750);
 }
 
 /* ===== ACTIONS ===== */
@@ -819,6 +853,8 @@ function commit(id,team){
   const g = ((team==="P"||MAN()) && id>=0) ? gradeOf(id,team,act) : null;
   S.draft[i]=id; S.step++; S.sel=null;
   S.log.push({i,team,act,id,g});
+  if(!S.draftId) S.draftId=newDraftId();
+  if(done()){ const rec=recordFromState(); histUpsert(rec); dbInsert(rec); }
   if(act==="P"&&id>=0){ loadMatchups(id); loadStratzMU(id); }
   S.stepLeft=done()?0:STEP_TIME(S.step);
   render(); scheduleAI();
@@ -842,7 +878,7 @@ function newDraft(){
   S.playerSide=$("#setSide").value; S.diff=$("#setDiff").value;
   const o=$("#setOrder").value; S.playerFirst=o==="first"?true:o==="second"?false:Math.random()<.5;
   S.timer=!MAN()&&$("#setTimer").checked;
-  S.draft=Array(24).fill(null);S.step=0;S.sel=null;S.log=[];S.history=[];
+  S.draft=Array(24).fill(null);S.step=0;S.sel=null;S.log=[];S.history=[];S.draftId=newDraftId();
   S.reserve={P:RESERVE,A:RESERVE};S.stepLeft=STEP_TIME(0);
   render(); scheduleAI();
 }
@@ -874,12 +910,13 @@ function buildPool(){
   $("#posChips").innerHTML=[0,1,2,3,4,5].map(p=>`<button class="chip" data-pos="${p}">${p?p+" · "+POSNAME[p]:"Все"}</button>`).join("");
 }
 
-function renderTimeline(){
-  $("#timeline").innerHTML=ORDER.map((o,i)=>{
+function renderTimeline(){ $("#timeline").innerHTML=timelineHTML(); }
+function timelineHTML(){
+  return ORDER.map((o,i)=>{
     const team=teamOfStep(i),side=sideOf(team),v=S.draft[i];
     const lbl= v==null? (o.act==="B"?"бан":"пик") : v<0?"—":HEROES[v].ab;
     const gap=(i===7||i===9||i===12||i===18||i===22)?" gap":"";
-    return `<div class="tl ${side} ${o.act==="B"?"ban":"pick"}${i===S.step?" cur":""}${gap}" title="${i+1}. ${team==="P"?"Ты":"Компьютер"} · ${o.act==="B"?"бан":"пик"}${v!=null&&v>=0?": "+esc(HEROES[v].name):""}">${v!=null&&v>=0?IMG(HEROES[v]):""}<span class="n">${i+1}</span><span class="v">${esc(lbl)}</span></div>`;
+    return `<div class="tl ${side} ${o.act==="B"?"ban":"pick"}${i===S.step?" cur":""}${gap}" title="${i+1}. ${team==="P"?L().me:L().opp} · ${o.act==="B"?"бан":"пик"}${v!=null&&v>=0?": "+esc(HEROES[v].name):""}">${v!=null&&v>=0?IMG(HEROES[v]):""}<span class="n">${i+1}</span><span class="v">${esc(lbl)}</span></div>`;
   }).join("");
 }
 
@@ -982,12 +1019,12 @@ function renderHints(){
   });
 }
 
-function renderLog(){
-  $("#log").innerHTML=S.log.length?S.log.map(e=>{
+function renderLog(){ $("#log").innerHTML=logHTML(); const el=$("#log"); el.scrollTop=el.scrollHeight; }
+function logHTML(){
+  return S.log.length?S.log.map(e=>{
     const who=e.team==="P"?L().me:L().opp, what=e.act==="B"?"бан":"пик", name=e.id<0?"пропуск":HEROES[e.id].name;
-    const g=e.g?`<span class="grade ${e.g.cls}" title="Лучший вариант по модели: ${esc(HEROES[e.g.best].name)}">#${e.g.rank} ${e.g.txt}</span>`:"";
+    const g=e.g?`<span class="grade ${e.g.cls}" title="${e.g.best!=null?"Лучший вариант по модели: "+esc(HEROES[e.g.best].name):""}">#${e.g.rank} ${e.g.txt}</span>`:"";
     return `<div class="l"><span class="n">${e.i+1}</span><span>${who} · ${what}: <b>${esc(name)}</b></span>${g}</div>`}).join(""):`<span class="muted">Пока пусто</span>`;
-  const el=$("#log"); el.scrollTop=el.scrollHeight;
 }
 
 function teamScore(team){
@@ -1009,8 +1046,11 @@ function teamScore(team){
 }
 function renderAnalysis(){
   const w=$("#analysisWrap");
-  if(!done()){w.hidden=true;w.innerHTML="";return}
-  w.hidden=false;
+  if(!done()){w.hidden=true;w.style.display="none";w.innerHTML="";return}
+  w.hidden=false; w.style.display=""; w.innerHTML=analysisHTML();
+}
+function winProb(){const P=teamScore("P"),A=teamScore("A");const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;const pr=1/(1+Math.exp(-(radT.total-dirT.total)/6));return sideOf("P")==="rad"?pr:1-pr}
+function analysisHTML(){
   const P=teamScore("P"),A=teamScore("A");
   const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;
   const pr=1/(1+Math.exp(-(radT.total-dirT.total)/6));
@@ -1024,13 +1064,189 @@ function renderAnalysis(){
     ${t.ctrPairs.length?`<div class="sub">Ключевые контрпики</div><div class="muted">${t.ctrPairs.sort((a,b)=>b[2]-a[2]).slice(0,6).map(([a,b])=>`${esc(HEROES[a].ab)} → ${esc(HEROES[b].ab)}`).join(", ")}</div>`:""}
     </div>`};
   const graded=S.log.filter(e=>e.g);const avg=graded.length?graded.reduce((s,e)=>s+e.g.rank,0)/graded.length:0;
-  w.innerHTML=`<div class="analysis"><div class="card verdict"><h4>Прогноз модели</h4>
+  return `<div class="analysis"><div class="card verdict"><h4>Прогноз модели</h4>
     <div class="wbar"><div class="r" style="width:${(pr*100).toFixed(0)}%">Radiant ${(pr*100).toFixed(0)}%</div><div class="d" style="width:${(100-pr*100).toFixed(0)}%">${(100-pr*100).toFixed(0)}% Dire</div></div>
     <div class="muted">${MAN()?"Наша":"Твоя"} сторона: ${sideOf("P")==="rad"?"Radiant":"Dire"}. Средний ранг ${MAN()?"ходов (обеих команд)":"твоих ходов"} по модели: ${avg?avg.toFixed(1):"—"} (1 = лучший вариант).</div></div>
     <div class="ateams">${card(radT,"Radiant"+(sideOf("P")==="rad"?(MAN()?" · мы":" · ты"):""))}${card(dirT,"Dire"+(sideOf("P")==="dire"?(MAN()?" · мы":" · ты"):""))}</div></div>`;
 }
 
 function render(){renderTimeline();renderTeams();renderTurn();renderPool();renderDetail();renderHints();renderLog();renderAnalysis();$("#undoBtn").disabled=!S.history.length}
+
+/* ===== HISTORY ===== */
+const HKEY="cm_history", HMAX=300;
+let VIEW="ai", HSEL=null, HFILTER="all", HDEL=false;
+const newDraftId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function histLoad(){try{const v=JSON.parse(localStorage.getItem(HKEY));return Array.isArray(v)?v:[]}catch(e){return []}}
+function histSave(list){try{localStorage.setItem(HKEY,JSON.stringify(list.slice(0,HMAX)))}catch(e){}}
+function recordFromState(){
+  return {v:1,id:S.draftId,t:Date.now(),mode:MODE,side:S.playerSide,first:S.playerFirst,diff:S.diff,
+    draft:S.draft.slice(),name:"",
+    log:S.log.map(e=>({i:e.i,team:e.team,act:e.act,id:e.id,r:e.g?e.g.rank:null,b:e.g?e.g.best:null}))};
+}
+function histUpsert(rec){
+  const l=histLoad(), k=l.findIndex(x=>x.id===rec.id);
+  if(k>=0){rec.name=l[k].name;rec.t=l[k].t;l[k]=rec} else l.unshift(rec);
+  histSave(l);
+}
+function validRecord(r){return r&&typeof r.id==="string"&&Array.isArray(r.draft)&&r.draft.length===24&&r.draft.every(x=>x===null||(Number.isInteger(x)&&x>=-1&&x<N))&&(r.mode==="ai"||r.mode==="manual")}
+function stateFromRecord(r){
+  const st=makeState();
+  st.playerSide=r.side==="dire"?"dire":"rad"; st.playerFirst=!!r.first; st.diff=r.diff||"normal";
+  st.draft=r.draft.slice(); st.step=24; st.draftId=r.id;
+  st.log=(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:e.id,g:e.r?{rank:e.r,best:e.b??null,cls:e.r<=3?"g-a":e.r<=10?"g-b":"g-c",txt:e.r<=3?"отлично":e.r<=10?"неплохо":"можно лучше"}:null}));
+  return st;
+}
+function withRecord(r,fn){const sm=MODE,ss=S;MODE=r.mode;S=stateFromRecord(r);try{return fn()}finally{MODE=sm;S=ss}}
+function teamPicksOf(r,team){return withRecord(r,()=>{const ids=picks(team),m=bestAssign(ids).map;return ids.map((id,k)=>[m[k],id]).sort((a,b)=>a[0]-b[0]).map(x=>x[1])})}
+function fiveHTML(ids,side){return `<div class="five ${side}">${ids.map(id=>IMG_OK?`<img src="${HEROES[id].img}" alt="${esc(HEROES[id].name)}" title="${esc(HEROES[id].name)}" loading="lazy" onerror="imgFail(this)">`:`<span class="ph" title="${esc(HEROES[id].name)}">${esc(HEROES[id].ab)}</span>`).join("")}</div>`}
+const fmtDate=t=>new Date(t).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+const modeName=m=>m==="manual"?"Турнир":"Тренировка";
+
+/* ===== ОБЩАЯ БАЗА (Supabase) =====
+   Заполняется после создания проекта: адрес проекта и публичный (anon / publishable) ключ.
+   Публичный ключ можно держать в коде сайта: доступ ограничен правилами таблицы (только чтение и добавление). */
+const DB={url:"https://xxcamhzdaibiotzgcobn.supabase.co",key:"sb_publishable_SiER2K_KtPdlCoD8h0V2Dw_49iKhqT6"};
+const dbOn=()=>!!(DB.url&&DB.key);
+const NICK_KEY="cm_nick";
+const getNick=()=>{try{return localStorage.getItem(NICK_KEY)||""}catch(e){return ""}};
+let HREMOTE=null, HREMOTE_ERR="", HSRC="all";
+const idToName=x=>x==null?null:x<0?"-":HEROES[x].name;
+const nameToId=n=>n==null?null:n==="-"?-1:(BYNAME[n]??null);
+function toDb(r){return {id:r.id,created_at:new Date(r.t).toISOString(),mode:r.mode,side:r.side,first_pick:!!r.first,
+  draft:r.draft.map(idToName),log:(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,h:idToName(e.id),r:e.r,b:idToName(e.b)})),author:getNick().slice(0,32)||null}}
+function fromDb(x){
+  const draft=(x.draft||[]).map(nameToId);
+  return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:x.first_pick,draft,name:"",author:x.author||"",remote:true,
+    log:(x.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:nameToId(e.h),r:e.r,b:nameToId(e.b)}))};
+}
+// новые ключи (sb_publishable_…) передаются только в заголовке apikey; старый anon-ключ (JWT) работает так же
+const dbHeaders=()=>({apikey:DB.key,"Content-Type":"application/json"});
+async function dbInsert(rec){
+  if(!dbOn()) return;
+  try{ await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts",{method:"POST",headers:{...dbHeaders(),Prefer:"resolution=ignore-duplicates,return=minimal"},body:JSON.stringify(toDb(rec))}) }catch(e){}
+}
+async function dbFetch(){
+  if(!dbOn()) return;
+  HREMOTE_ERR="";
+  try{
+    const r=await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts?select=*&order=created_at.desc&limit=500",{headers:dbHeaders()});
+    if(!r.ok) throw new Error("ошибка базы "+r.status);
+    HREMOTE=(await r.json()).map(fromDb).filter(validRecord);
+  }catch(e){HREMOTE_ERR=e.message||"нет связи с базой"}
+  if(VIEW==="history") renderHistory();
+}
+function historySource(){
+  const local=histLoad();
+  if(!dbOn()||HREMOTE==null) return local;
+  if(HSRC==="mine"){const ids=new Set(local.map(r=>r.id));return HREMOTE.filter(r=>ids.has(r.id))}
+  return HREMOTE;
+}
+
+function statsHTML(list){
+  if(!list.length) return "";
+  const cnt=(fn)=>{const m={};list.forEach(r=>fn(r).forEach(id=>{m[id]=(m[id]||0)+1}));return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,8)};
+  const by=(team,act)=>r=>withRecord(r,()=>ORDER.map((o,i)=>o.act===act&&teamOfStep(i)===team?S.draft[i]:null).filter(x=>x!=null&&x>=0));
+  const block=(title,rows)=>{const mx=rows.length?rows[0][1]:1;return `<div class="card"><h4>${title}</h4>${rows.length?rows.map(([id,c])=>`<div class="stat-row">${IMG(HEROES[id],"pimg")}<span style="min-width:110px">${esc(HEROES[id].name)}</span><span class="bar"><i style="width:${c/mx*100}%"></i></span><b>${c}</b></div>`).join(""):'<span class="muted">—</span>'}</div>`};
+  const probs=list.map(r=>withRecord(r,()=>winProb()));
+  const avgP=probs.reduce((a,b)=>a+b,0)/probs.length;
+  const ranks=list.flatMap(r=>(r.log||[]).filter(e=>e.team==="P"&&e.r).map(e=>e.r));
+  const avgR=ranks.length?ranks.reduce((a,b)=>a+b,0)/ranks.length:0;
+  return `<div class="card"><div class="kpis">
+      <div class="kpi"><b>${list.length}</b><span>драфтов</span></div>
+      <div class="kpi"><b>${(avgP*100).toFixed(0)}%</b><span>средний прогноз за нас</span></div>
+      <div class="kpi"><b>${probs.filter(p=>p>=0.5).length}</b><span>драфтов с перевесом</span></div>
+      <div class="kpi"><b>${avgR?avgR.toFixed(1):"—"}</b><span>средний ранг наших ходов</span></div>
+    </div></div>
+    <div class="stats">${block("Мы чаще всего берём",cnt(by("P","P")))}${block("Мы чаще всего баним",cnt(by("P","B")))}${block("Против нас берут",cnt(by("A","P")))}${block("Против нас банят",cnt(by("A","B")))}</div>`;
+}
+
+function historyListHTML(){
+  const list=historySource().filter(r=>HFILTER==="all"||r.mode===HFILTER);
+  const items=list.map(r=>{
+    const our=teamPicksOf(r,"P"), their=teamPicksOf(r,"A"), pr=withRecord(r,()=>winProb());
+    const ourSide=r.side==="dire"?"dire":"rad", thSide=ourSide==="rad"?"dire":"rad";
+    return `<button class="hitem" data-hid="${esc(r.id)}"><span><span class="ttl">${esc(r.name||"Драфт "+fmtDate(r.t))}</span><br><span class="when">${fmtDate(r.t)} · <span class="badge">${modeName(r.mode)}</span>${r.author?" · "+esc(r.author):""}</span></span>${fiveHTML(our,ourSide)}${fiveHTML(their,thSide)}<span class="prob ${pr>=0.5?"pos":"neg"}">${(pr*100).toFixed(0)}%</span></button>`;
+  }).join("");
+  return `<div class="hist-head"><h2>История драфтов</h2>
+      ${dbOn()?`<select id="hSrc" aria-label="Чьи драфты"><option value="all">Все посетители</option><option value="mine">Только мои</option></select>`:""}
+      <select id="hFilter" aria-label="Фильтр"><option value="all">Все режимы</option><option value="ai">Тренировка</option><option value="manual">Турнир</option></select>
+      ${dbOn()?`<input id="hNick" maxlength="32" placeholder="Твой ник для истории" value="${esc(getNick())}" style="background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 10px;width:180px">`:""}
+    </div>
+    <p class="note" style="margin:0">${dbOn()
+      ? "Каждый законченный драфт из «Тренировки» и «Турнира» автоматически попадает в общую базу, её видят все посетители сайта с любого компьютера. Слева пятёрка того, кто драфтил, справа соперник, справа прогноз модели в его пользу."
+      : "Каждый законченный драфт из «Тренировки» и «Турнира» сохраняется здесь. Пока общая база не подключена, история хранится только в этом браузере. Слева наша пятёрка, справа соперник, справа прогноз модели за нас."}</p>
+    ${dbOn()&&HREMOTE==null&&!HREMOTE_ERR?'<div class="muted">Загружаю общую историю…</div>':""}
+    ${HREMOTE_ERR?`<div class="neg" style="font-size:13px">Общая база недоступна (${esc(HREMOTE_ERR)}), показываю драфты из этого браузера.</div>`:""}
+    ${statsHTML(list)}
+    <div class="hlist">${items||'<div class="card"><p class="muted" style="margin:0">Пока нет законченных драфтов. Доиграй драфт до 24-го хода в «Тренировке» или «Турнире», и он появится здесь.</p></div>'}</div>`;
+}
+
+function historyDetailHTML(r){
+  return withRecord(r,()=>{
+    const ourSide=sideOf("P"), bansOf=t=>ORDER.map((o,i)=>o.act==="B"&&teamOfStep(i)===t?S.draft[i]:null).filter(x=>x!=null);
+    const bansHTML=ids=>`<div class="bans-row">${ids.map(id=>id<0?`<span class="b">пропуск</span>`:`<span class="b" title="${esc(HEROES[id].name)}">${IMG(HEROES[id])}${IMG_OK?"":esc(HEROES[id].ab)}</span>`).join("")}</div>`;
+    const P=teamScore("P"),A=teamScore("A"),pr=winProb();
+    const ours=S.log.filter(e=>e.team==="P"&&e.g);
+    const worst=ours.slice().sort((a,b)=>b.g.rank-a.g.rank).slice(0,3).filter(e=>e.g.rank>3);
+    const row=(n,a,b)=>`<div class="row"><span>${n}</span><span><b>${a}</b> / ${b}</span></div>`;
+    return `<div class="hist-head"><button class="btn" id="hBack">← К списку</button><h2 style="margin-left:4px">Разбор драфта</h2></div>
+    <div class="card hdet">
+      <div class="hdet-top">${r.remote?`<span style="font-weight:600;font-size:16px;margin-right:auto">${esc(r.author?"Драфт: "+r.author:"Драфт")}</span>`:`<input id="hName" maxlength="80" value="${esc(r.name||"")}" placeholder="Название, например «Финал против Team X»">`}
+        <span class="badge">${modeName(r.mode)}</span><span class="muted">${fmtDate(r.t)} · мы ${ourSide==="rad"?"Radiant":"Dire"}, ${S.playerFirst?"первый пик":"второй пик"}</span></div>
+      <div class="timeline">${timelineHTML()}</div>
+      <div class="ateams">
+        <div class="card"><h4>Наши баны</h4>${bansHTML(bansOf("P"))}</div>
+        <div class="card"><h4>Баны соперника</h4>${bansHTML(bansOf("A"))}</div>
+      </div>
+    </div>
+    <div class="card"><h4>Показатели</h4>
+      <div class="kpis">
+        <div class="kpi"><b class="${pr>=0.5?"pos":"neg"}">${(pr*100).toFixed(0)}%</b><span>прогноз за нас</span></div>
+        <div class="kpi"><b>${fmt(P.total-A.total)}</b><span>разница итоговой оценки</span></div>
+        <div class="kpi"><b>${ours.length?(ours.reduce((s,e)=>s+e.g.rank,0)/ours.length).toFixed(1):"—"}</b><span>средний ранг наших ходов</span></div>
+      </div>
+      <div class="rel" style="max-width:520px">
+        <div class="sub">Мы / соперник</div>
+        ${row("Мета",fmt(P.meta*0.6),fmt(A.meta*0.6))}${row("Синергия",fmt(P.syn),fmt(A.syn))}${row("Контрпики",fmt(P.ctr*0.9),fmt(A.ctr*0.9))}${row("Состав",fmt(P.comp),fmt(A.comp))}${row("Роли",fmt(P.role),fmt(A.role))}
+      </div>
+      ${worst.length?`<div class="sub">Где можно было лучше</div><div class="muted">${worst.map(e=>`ход ${e.i+1}: ${e.act==="B"?"бан":"пик"} ${esc(HEROES[e.id].name)} — #${e.g.rank}${e.g.best!=null?", модель советовала "+esc(HEROES[e.g.best].name):""}`).join("<br>")}</div>`:""}
+    </div>
+    ${analysisHTML()}
+    <div class="card"><h4>Ход драфта</h4><div class="log" style="max-height:none">${logHTML()}</div></div>
+    ${r.remote?"":`<div class="card"><div class="actions"><button class="btn" id="hDelete">${HDEL?"Точно удалить? Нажми ещё раз":"Удалить из истории"}</button></div></div>`}`;
+  });
+}
+
+function renderHistory(){
+  const v=$("#historyView");
+  const list=historySource(), r=HSEL?(list.find(x=>x.id===HSEL)||histLoad().find(x=>x.id===HSEL)):null;
+  if(HSEL&&!r) HSEL=null;
+  v.innerHTML = r ? historyDetailHTML(r) : historyListHTML();
+  if(!r){
+    const f=$("#hFilter"); f.value=HFILTER; f.onchange=()=>{HFILTER=f.value;renderHistory()};
+    v.querySelectorAll(".hitem").forEach(b=>b.onclick=()=>{HSEL=b.dataset.hid;HDEL=false;renderHistory();window.scrollTo(0,0)});
+    const sr=$("#hSrc"); if(sr){sr.value=HSRC; sr.onchange=()=>{HSRC=sr.value;renderHistory()}}
+    const nk=$("#hNick"); if(nk) nk.onchange=()=>{try{localStorage.setItem(NICK_KEY,nk.value.trim().slice(0,32))}catch(e){}};
+  } else {
+    $("#hBack").onclick=()=>{HSEL=null;HDEL=false;renderHistory()};
+    if($("#hName")) $("#hName").onchange=e=>{const l=histLoad(),k=l.findIndex(x=>x.id===r.id);if(k>=0){l[k].name=e.target.value.trim().slice(0,80);histSave(l)}};
+    if($("#hDelete")) $("#hDelete").onclick=()=>{ if(!HDEL){HDEL=true;renderHistory();return} histSave(histLoad().filter(x=>x.id!==r.id)); HSEL=null; HDEL=false; renderHistory(); };
+  }
+}
+function showView(v){
+  VIEW=v;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===v));
+  const hv=$("#historyView"), isH=v==="history";
+  document.body.classList.toggle("view-history",isH);
+  hv.hidden=!isH; hv.style.display=isH?"":"none";
+  if(isH){
+    clearTimeout(STATES.ai.aiTimer);
+    $("#navHint").textContent=dbOn()?"общая история драфтов всех посетителей":"законченные драфты и их разбор";
+    renderHistory(); dbFetch();
+  } else {
+    if(v!==MODE) setMode(v); else { $("#navHint").textContent=v==="manual"?"все баны и пики ставите вы — за себя и за соперника":"драфт против компьютера"; render(); scheduleAI(); }
+  }
+}
 
 /* ===== EVENTS ===== */
 buildPool();
@@ -1093,11 +1309,12 @@ function setMode(m){
   if(m===MODE) return;
   clearTimeout(STATES.ai.aiTimer);
   MODE=m; S=STATES[m];
+  VIEW=m;
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===m));
   $("#navHint").textContent=m==="manual"?"все баны и пики ставите вы — за себя и за соперника":"драфт против компьютера";
   syncSettings(); render(); scheduleAI();
 }
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>setMode(t.dataset.mode));
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.mode));
 ["#setSide","#setOrder","#setDiff"].forEach(sel=>$(sel).addEventListener("change",()=>{ if(S.step===0) newDraft() }));
 $("#newBtn").onclick=newDraft;
 $("#undoBtn").onclick=undo;
