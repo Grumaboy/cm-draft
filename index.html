@@ -32,6 +32,18 @@ button{cursor:pointer}
 .stz a{color:var(--gold)}
 .stz-row{display:flex;flex-wrap:wrap;gap:8px}
 .stz-row input{flex:1 1 260px;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:7px 10px}
+/* hints by position */
+.pcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:8px}
+.pcol{display:flex;flex-direction:column;gap:4px;min-width:0}
+.pcol h5{margin:0 0 2px;font-family:var(--f-disp);font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.pcol h5 b{color:var(--fg)}
+.prow{display:grid;grid-template-columns:auto minmax(0,1fr) 34px;gap:6px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:3px 6px 3px 3px;text-align:left}
+.prow:hover{border-color:var(--gold)}
+.prow .pimg{width:52px}
+.prow .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .rs{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .v{font-family:var(--f-mono);font-size:12px;color:var(--gold);text-align:right}
+.hints-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
 /* history */
 body.view-history .settings, body.view-history #timeline, body.view-history .board, body.view-history #stratzPanel{display:none!important}
 .hist{display:flex;flex-direction:column;gap:12px}
@@ -284,6 +296,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     <section class="team rad" id="teamRad"></section>
     <div class="center">
       <div class="turn" id="turn"></div>
+      <div class="card" id="hintsCard"></div>
       <div id="analysisWrap" hidden></div>
       <div class="filters">
         <input id="search" type="search" placeholder="Поиск героя (англ. имя или сокращение)" autocomplete="off">
@@ -293,7 +306,6 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
       <div class="lower">
         <div class="card" id="detail"></div>
         <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
-          <div class="card" id="hintsCard"></div>
           <div class="card"><h4>Ход драфта</h4><div class="log" id="log"></div></div>
         </div>
       </div>
@@ -973,47 +985,70 @@ function renderDetail(){
   const el=$("#detail");
   const id=S.sel;
   if(id==null){
-    el.innerHTML=`<h4>Герой</h4><p class="muted" style="margin:0">Нажми на героя, чтобы увидеть его связки с твоими пиками, кого он контрит и кто опасен для него. Двойной клик или Enter подтверждает выбор.</p>`;return}
+    el.innerHTML=`<h4>Герой</h4><p class="muted" style="margin:0">Нажми на героя. На пике видно, как он впишется в твой драфт; на бане — насколько он усилил бы соперника. Двойной клик или Enter подтверждает выбор.</p>`;return}
   const h=HEROES[id], un=unavailable().has(id);
   const myTurn=!!myAct(), act=done()?"P":ORDER[S.step].act, forOpp=MAN()&&!done()&&teamOfStep(S.step)==="A";
-  const me=picks("P"),en=picks("A");
+  const actor = done()?"P":teamOfStep(S.step);
+  const banView = !done() && act==="B";
+  const persp = banView ? other(actor) : actor;          // бан: смотрим, что герой дал бы тому, кому его баним
+  const me=picks(persp),en=picks(other(persp));
+  const ourName = persp==="P" ? L().our+" пиками" : (MAN()?"пиками соперника":"пиками компьютера");
+  const lbl = persp==="P"
+    ? {syn:"С "+ourName, ctr:"Контрит врагов", thr:"Опасны для него"}
+    : {syn:"С "+ourName, ctr:"Контрит "+L().ours, thr:(MAN()?"Наши":"Твои")+", кто его контрит"};
   const reasons=(rs)=>rs.sort((a,b)=>b[0]-a[0]).map(x=>x[1]).join(", ");
   const synR=me.map(a=>[a,SYN[id][a],[synNote(id,a),reasons(synRules(h,HEROES[a]))].filter(Boolean).join("; ")]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
   const withData=(r,a,b)=>[dataNote(a,b),r].filter(Boolean).join("; ");
   const ctrR=en.map(e=>[e,CTR[id][e],withData(reasons(ctrRules(h,HEROES[e])),id,e)]).filter(x=>x[1]>=0.3).sort((a,b)=>b[1]-a[1]);
   const thrR=en.map(e=>[e,-CTR[e][id],withData(reasons(ctrRules(HEROES[e],h)),e,id)]).filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]);
-  const eP=evalHero(id,"P"), eA=evalHero(id,"A");
+  const eP=evalHero(id,persp), eA=evalHero(id,other(persp));
   const attrName=ATTR.find(a=>a[0]===h.attr);
   el.innerHTML=`<div class="dh"><span class="big">${esc(h.name)}</span><span class="meta" style="color:var(${attrName[2]})">${attrName[1]}</span><span class="meta">${h.ranged?"дальний бой":"ближний бой"} · позиции ${h.posShare?h.pos.map(p=>p+" ("+Math.round(h.posShare[p]*100)+"%)").join(", "):h.pos.join(", ")} · ${h.sz?`Divine+ WR ${(h.sz.wr*100).toFixed(1)}% (STRATZ) · `:""}${h.live?`${h.sz?"":"Divine+ WR "+h.live.wr.toFixed(1)+"% · "}про: ${h.live.proPick} пиков, ${h.live.proBan} банов${h.live.proWr!=null&&h.live.proPick>=5?", WR "+h.live.proWr.toFixed(0)+"%":""}`:`паб WR ${h.wr.toFixed(1)}%${h.pro?" · про-приоритет":""}`}</span></div>
   <div class="tags">${[...h.t].map(k=>`<span class="tag">${TAG_RU[k]||k}</span>`).join("")}</div>
   <div class="cols3">
-    <div class="rel"><div class="sub">С ${L().our} пиками</div>${relList(synR,"")}</div>
-    <div class="rel"><div class="sub">Контрит врагов</div>${relList(ctrR,"pos")}</div>
-    <div class="rel"><div class="sub">Опасны для него</div>${relList(thrR,"neg")}</div>
+    <div class="rel"><div class="sub">${lbl.syn}</div>${relList(synR,"")}</div>
+    <div class="rel"><div class="sub">${lbl.ctr}</div>${relList(ctrR,persp==="P"?"pos":"neg")}</div>
+    <div class="rel"><div class="sub">${lbl.thr}</div>${relList(thrR,persp==="P"?"neg":"pos")}</div>
   </div>
-  <div class="score">для ${MAN()?"нас":"тебя"} <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
-  <div class="score">для соперника <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · ему не по ролям":""}</div>
+  ${banView?`<div class="muted" style="font-size:13px">Сейчас бан — показано, насколько герой усилил бы ${persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютер")}.</div>`:""}
+  <div class="score">${banView?"ценность бана":"для "+(persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютера"))} <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
+  <div class="score">${banView?"сам бы его взял":"для другой стороны"} <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · не по ролям":""}</div>
   <div class="actions">${un?`<span class="muted">Герой уже занят или забанен</span>`:myTurn?`<button class="btn primary" id="confirmBtn">${act==="B"?"Забанить":"Пикнуть"} ${esc(h.ab)}${forOpp?" за соперника":""}</button>`:`<span class="muted">Сейчас ход компьютера</span>`}</div>`;
   const cb=$("#confirmBtn"); if(cb) cb.onclick=playerConfirm;
 }
 
 function renderHints(){
   const el=$("#hintsCard");
-  if(!S.hints){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Выключены. Включи галочку сверху, чтобы видеть топ вариантов и оценку каждого хода.</p>`;return}
-  if(done()){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Драфт завершён.</p>`;return}
+  if(!S.hints){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Выключены. Включи галочку «Подсказки» сверху, чтобы видеть лучшие варианты по позициям.</p>`;return}
+  if(done()){el.hidden=true;el.style.display="none";return}
+  el.hidden=false; el.style.display="";
   const team=teamOfStep(S.step),act=ORDER[S.step].act;
   if(team!=="P"&&!MAN()){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Появятся на твоём ходу.</p>`;return}
-  const list=scoreAll(team,act).slice(0,team==="P"?8:6);
+  const roleTeam = act==="P" ? team : other(team);       // пик — смотрим свои роли, бан — роли того, кому баним
+  const hasPicks = picks(roleTeam).length>0;
+  const open = openPositions(roleTeam);
   const title = team==="P"
     ? (act==="B"?(MAN()?"Что нам банить":"Кого банить"):(MAN()?"Что нам брать":"Кого пикать"))
     : (act==="B"?"Что скорее всего забанят":"Что скорее всего возьмут");
-  const roleTeam = act==="P" ? team : other(team);
-  const open = openPositions(roleTeam);
-  const who = roleTeam==="P" ? (MAN()?"у нас":"у тебя") : (MAN()?"у соперника":"у компьютера");
-  const openTxt = picks(roleTeam).length ? `<p class="muted" style="margin:0">Свободные позиции ${who}: <b style="color:var(--fg)">${open.join(", ")||"—"}</b>${act==="B"?" — баним то, что может их закрыть":""}</p>` : "";
-  const sub = (team==="A" ? `<p class="muted" style="margin:0">Прогноз по модели. Поставь фактический ${act==="B"?"бан":"пик"} соперника.</p>` : "") + openTxt;
-  el.innerHTML=`<h4>${title}</h4>${sub}<div class="hints">${list.map(x=>`<button class="hint-row" data-id="${x.id}">${IMG(HEROES[x.id],"pimg")}<span class="r"><b style="color:var(--fg)">${esc(HEROES[x.id].name)}</b>${picks(roleTeam).length?(ri=>` <span class="tag" style="margin-left:4px">поз. ${ri.pos}${ri.moved.length?", "+esc(ri.moved.join(", ")):""}</span>`)(roleInfo(x.id,roleTeam)):""}<br>${esc(shortReason(x.id,team,act))}</span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`;
-  el.querySelectorAll(".hint-row").forEach(b=>{
+  const whoRole = roleTeam==="P" ? (MAN()?"нас":"тебя") : (MAN()?"соперника":"компьютера");
+  const expl = act==="B"
+    ? `Баним по позициям ${whoRole}: оценка показывает, насколько герой усилил бы их драфт.`
+    : `Берём по свободным позициям ${whoRole}: оценка показывает, насколько герой усилит драфт.`;
+  const groups={}; open.forEach(p=>groups[p]=[]);
+  scoreAll(team,act).forEach(x=>{
+    const h=HEROES[x.id];
+    let p, moved=[];
+    if(hasPicks){ const ri=roleInfo(x.id,roleTeam); p=ri.pos; moved=ri.moved; }
+    else p=h.pos[0];
+    if(groups[p]&&groups[p].length<5) groups[p].push({...x,moved});
+  });
+  const col=p=>`<div class="pcol"><h5><span>Поз. <b>${p}</b> · ${POSNAME[p]}</span></h5>${
+    groups[p].length?groups[p].map(x=>{const why=shortReason(x.id,team,act)+(x.moved.length?" · "+x.moved.join(", "):"");
+      return `<button class="prow" data-id="${x.id}" title="${esc(HEROES[x.id].name+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
+    :'<span class="muted">нет подходящих</span>'}</div>`;
+  el.innerHTML=`<div class="hints-head"><h4>${title}</h4><span class="muted" style="font-size:13px">${team==="A"?"Прогноз по модели — поставь фактический "+(act==="B"?"бан":"пик")+" соперника. ":""}${expl}${hasPicks?" Свободные позиции: <b style=\"color:var(--fg)\">"+(open.join(", ")||"—")+"</b>.":""}</span></div>
+    <div class="pcols">${open.map(col).join("")}</div>`;
+  el.querySelectorAll(".prow").forEach(b=>{
     b.onclick=()=>{S.sel=+b.dataset.id;renderPool();renderDetail()};
     b.ondblclick=()=>{S.sel=+b.dataset.id;playerConfirm()};
   });
