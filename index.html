@@ -1,3 +1,10 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
 <title>CM Драфт-тренажёр</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
@@ -14,6 +21,8 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden],.card[hidden],.stz[hidden]{display:none!important}
+html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.4}
 button,select,input{font:inherit;color:inherit}
 button{cursor:pointer}
@@ -225,7 +234,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     </div>
   </div>
 
-  <section class="card stz" id="stratzPanel" hidden>
+  <section class="card stz" id="stratzPanel" hidden style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h4>Подключение STRATZ</h4><button class="btn" id="stratzClose" aria-label="Закрыть">Закрыть ✕</button></div>
     <p class="muted" style="margin:0">STRATZ даёт статистику ранга Divine–Immortal: на каких позициях реально играют героев, кто кого контрит и кто с кем лучше выигрывает вместе. Нужен твой личный ключ: войди на stratz.com через Steam, открой страницу <a href="https://stratz.com/api" target="_blank" rel="noopener">stratz.com/api</a> и скопируй токен. Ключ хранится только в этом браузере и отправляется только в STRATZ. Не публикуй его и не вставляй в код сайта.</p>
     <div class="stz-row">
@@ -1108,7 +1117,7 @@ function renderStratzPanel(){
     : SZ.status==="fail" ? "Не получилось: "+SZ.msg+". Если ошибка про блокировку браузером, напиши мне — сделаем обходной вариант через прокси."
     : "";
 }
-function toggleStratz(open){const p=$("#stratzPanel");p.hidden=open===undefined?!p.hidden:!open;renderStratzPanel();if(!p.hidden){p.scrollIntoView({block:"start",behavior:"smooth"});$("#stratzKey").focus()}else if(location.hash==="#stratz"){history.replaceState(null,"",location.pathname+location.search)}}
+function toggleStratz(open){const p=$("#stratzPanel");p.hidden=open===undefined?!p.hidden:!open;p.style.display=p.hidden?"none":"";renderStratzPanel();if(!p.hidden){p.scrollIntoView({block:"start",behavior:"smooth"});$("#stratzKey").focus()}else if(location.hash==="#stratz"){history.replaceState(null,"",location.pathname+location.search)}}
 $("#stratzBtn").onclick=()=>toggleStratz();
 $("#stratzClose").onclick=()=>toggleStratz(false);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#stratzPanel").hidden)toggleStratz(false)});
@@ -1126,3 +1135,6 @@ loadStratz(false);
 renderStratzPanel();
 if(location.hash==="#stratz") toggleStratz(true);
 </script>
+
+</body>
+</html>
