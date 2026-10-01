@@ -226,7 +226,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
   </div>
 
   <section class="card stz" id="stratzPanel" hidden>
-    <h4>Подключение STRATZ</h4>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h4>Подключение STRATZ</h4><button class="btn" id="stratzClose" aria-label="Закрыть">Закрыть ✕</button></div>
     <p class="muted" style="margin:0">STRATZ даёт статистику ранга Divine–Immortal: на каких позициях реально играют героев, кто кого контрит и кто с кем лучше выигрывает вместе. Нужен твой личный ключ: войди на stratz.com через Steam, открой страницу <a href="https://stratz.com/api" target="_blank" rel="noopener">stratz.com/api</a> и скопируй токен. Ключ хранится только в этом браузере и отправляется только в STRATZ. Не публикуй его и не вставляй в код сайта.</p>
     <div class="stz-row">
       <input id="stratzKey" type="password" autocomplete="off" placeholder="Вставь токен STRATZ">
@@ -1108,11 +1108,14 @@ function renderStratzPanel(){
     : SZ.status==="fail" ? "Не получилось: "+SZ.msg+". Если ошибка про блокировку браузером, напиши мне — сделаем обходной вариант через прокси."
     : "";
 }
-function toggleStratz(open){const p=$("#stratzPanel");p.hidden=open===undefined?!p.hidden:!open;renderStratzPanel();if(!p.hidden){p.scrollIntoView({block:"start",behavior:"smooth"});$("#stratzKey").focus()}}
+function toggleStratz(open){const p=$("#stratzPanel");p.hidden=open===undefined?!p.hidden:!open;renderStratzPanel();if(!p.hidden){p.scrollIntoView({block:"start",behavior:"smooth"});$("#stratzKey").focus()}else if(location.hash==="#stratz"){history.replaceState(null,"",location.pathname+location.search)}}
 $("#stratzBtn").onclick=()=>toggleStratz();
+$("#stratzClose").onclick=()=>toggleStratz(false);
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#stratzPanel").hidden)toggleStratz(false)});
 $("#stratzNav").onclick=()=>toggleStratz(true);
 $("#stratzSave").onclick=()=>{const v=$("#stratzKey").value.trim(); if(!v){$("#stratzMsg").textContent="Вставь токен в поле.";return}
-  try{localStorage.setItem(SZ_KEY,v)}catch(e){} $("#stratzKey").value=""; loadStratz(true)};
+  try{localStorage.setItem(SZ_KEY,v)}catch(e){} $("#stratzKey").value="";
+  loadStratz(true).then(()=>{ if(SZ.status==="ok") setTimeout(()=>toggleStratz(false),1200) })};
 $("#stratzRemove").onclick=()=>{try{localStorage.removeItem(SZ_KEY);localStorage.removeItem("sz_base")}catch(e){}
   SZ.status="off";SZ.vs={};SZ.with={};
   for(let i=0;i<N;i++){CTR[i].set(CTR_R[i]);SYN[i].set(SYN_R[i])}
