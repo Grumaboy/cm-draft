@@ -151,6 +151,8 @@ select{background:var(--panel2);border:1px solid var(--line);border-radius:4px;p
 .slots{display:flex;flex-direction:column;gap:5px}
 .slot{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;min-height:40px;padding:4px 8px;font-size:14px}
 .slot.empty{color:var(--muted);border-style:dashed}
+.slot .possel{margin-left:auto;background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:1px 2px;font-family:var(--f-mono);font-size:11px;color:var(--fg)}
+.slot.locked .possel{border-color:var(--gold)}
 .slot .pos{margin-left:auto;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
 .bans{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
 .bans .b{background:var(--panel2);border:1px dashed var(--line);border-radius:3px;height:28px;font-family:var(--f-disp);font-size:13px;display:flex;align-items:center;justify-content:center;color:var(--muted);text-decoration:line-through;overflow:hidden;white-space:nowrap}
@@ -834,14 +836,24 @@ const POSFIT=[3,2,1.2,0.8];
 const fit=(h,p)=>{
   if(h.posShare){const s=h.posShare[p]||0;return s>=0.45?3:s>=0.2?2:s>=0.08?1.2:-4}
   const i=h.pos.indexOf(p);return i<0?-4:(POSFIT[i]??0.8)};
-function bestAssign(ids){
+function bestAssign(ids,locks){
   if(!ids.length) return {score:0,map:[]};
+  locks = locks || (typeof S!=="undefined"&&S.locks) || {};
   let best=-1e9,bestMap=null;const used=[0,0,0,0,0,0],cur=[];
   (function rec(i,s){
     if(i===ids.length){if(s>best){best=s;bestMap=cur.slice()}return}
-    for(let p=1;p<=5;p++){if(used[p])continue;used[p]=1;cur[i]=p;rec(i+1,s+fit(HEROES[ids[i]],p));used[p]=0}
+    const L=locks[ids[i]];
+    for(let p=1;p<=5;p++){if(used[p]||(L&&p!==L))continue;used[p]=1;cur[i]=p;rec(i+1,s+(L?3:fit(HEROES[ids[i]],p)));used[p]=0}
   })(0,0);
+  if(!bestMap&&Object.keys(locks).length) return bestAssign(ids,{});
   return {score:best,map:bestMap};
+}
+function setLock(team,id,pos){
+  // ставит герою позицию; если её уже занимает другой закреплённый герой той же команды — меняет их местами
+  const ps=picks(team), cur=bestAssign(ps).map[ps.indexOf(id)];
+  ps.forEach(x=>{ if(x!==id&&S.locks[x]===pos) S.locks[x]=cur });
+  S.locks[id]=pos;
+  ps.forEach((x,k)=>{ if(!S.locks[x]) S.locks[x]=bestAssign(ps).map[k] }); // фиксируем остальных, чтобы их не перетасовало
 }
 function profile(ids){
   const c=k=>ids.filter(id=>HEROES[id].t.has(k)).length;
@@ -936,14 +948,25 @@ function gradeOf(id,team,act){
   const txt=rank<=3?"отлично":rank<=10?"неплохо":"можно лучше";
   return {rank,cls,txt,best:list[0].id};
 }
+let setLockAfter=null;
 function commit(id,team){
   const i=S.step, act=ORD()[i].act;
-  if(team==="P"||MAN()) S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve,order:S.order}));
+  if(!S.locks) S.locks={};
+  if(team==="P"||MAN()) S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve,order:S.order,locks:S.locks}));
   const g = ((team==="P"||MAN()) && id>=0) ? gradeOf(id,evalTeamOf(team),act) : null;
   S.draft[i]=id; S.step++; S.sel=null;
+  if(act==="P"&&id>=0&&S.selPos&&S.selFor===id&&team!=="N") setLockAfter=[team,id,S.selPos];
+  S.selPos=null; S.selFor=null;
   S.log.push({i,team,act,id,g});
   if(!S.draftId) S.draftId=newDraftId();
   if(done()){ const rec=recordFromState(); histUpsert(rec); dbInsert(rec); }
+  if(!setLockAfter&&act==="P"&&id>=0&&team==="P"){
+    // герой из пула команды встаёт на позицию своего игрока, если она ещё свободна
+    const taken=new Set(picks("P").filter(x=>x!==id&&S.locks[x]).map(x=>S.locks[x]));
+    const own=poolOwners(id).find(o=>o.pos>=1&&o.pos<=5&&!taken.has(o.pos));
+    if(own) setLockAfter=["P",id,own.pos];
+  }
+  if(setLockAfter){ const [t,h,p]=setLockAfter; setLockAfter=null; setLock(t,h,p); S.log[S.log.length-1].p=p; }
   if(act==="P"&&id>=0){ loadMatchups(id); loadStratzMU(id); }
   S.stepLeft=done()?0:STEP_TIME(S.step);
   render(); scheduleAI();
@@ -972,7 +995,7 @@ function undo(){
   if(!S.history.length) return;
   clearTimeout(S.aiTimer);
   const h=JSON.parse(S.history.pop());
-  S.draft=h.draft;S.step=h.step;S.log=h.log;S.reserve=h.reserve;if(h.order)S.order=h.order;S.sel=null;S.stepLeft=STEP_TIME(S.step);
+  S.draft=h.draft;S.step=h.step;S.log=h.log;S.reserve=h.reserve;if(h.order)S.order=h.order;S.locks=h.locks||{};S.sel=null;S.stepLeft=STEP_TIME(S.step);
   render(); scheduleAI();
 }
 function newDraft(){
@@ -980,7 +1003,7 @@ function newDraft(){
   S.playerSide=$("#setSide").value; S.diff=$("#setDiff").value;
   const o=$("#setOrder").value; S.playerFirst=o==="first"?true:o==="second"?false:Math.random()<.5;
   S.timer=!MAN()&&$("#setTimer").checked;
-  S.order=AP()?orderAP():null; S.draft=Array(ORD().length).fill(null);S.step=0;S.sel=null;S.log=[];S.history=[];S.draftId=newDraftId();
+  S.order=AP()?orderAP():null; S.draft=Array(ORD().length).fill(null);S.step=0;S.sel=null;S.selPos=null;S.locks={};S.log=[];S.history=[];S.draftId=newDraftId();
   S.reserve={P:RESERVE,A:RESERVE};S.stepLeft=STEP_TIME(0);
   render(); scheduleAI();
 }
@@ -1027,7 +1050,7 @@ function teamHTML(side){
   const ps=picks(team), assign=bestAssign(ps);
   const total=ORD().filter((o,i)=>o.act==="P"&&teamOfStep(i)===team).length;
   const slots=[];for(let k=0;k<5;k++){const id=ps[k];
-    slots.push(id==null?`<div class="slot empty">пик ${k+1}</div>`:`<div class="slot">${IMG(HEROES[id],"pimg")}<b style="font-family:var(--f-disp);font-size:17px">${esc(HEROES[id].ab)}</b><span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(HEROES[id].name)}</span><span class="pos">поз. ${assign.map[k]}</span></div>`)}
+    slots.push(id==null?`<div class="slot empty">пик ${k+1}</div>`:`<div class="slot${S.locks&&S.locks[id]?" locked":""}">${IMG(HEROES[id],"pimg")}<b style="font-family:var(--f-disp);font-size:17px">${esc(HEROES[id].ab)}</b><span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(HEROES[id].name)}</span>${true?`<select class="possel" data-team="${team}" data-hid="${id}" title="Позиция героя — поменяй, если он играет не там">${[1,2,3,4,5].map(q=>`<option value="${q}"${assign.map[k]===q?" selected":""}>поз. ${q}</option>`).join("")}</select>`:""}</div>`)}
   const bl=[];ORD().forEach((o,i)=>{if(o.act==="B"&&teamOfStep(i)===team){const v=S.draft[i];bl.push(v==null?`<div class="b e">—</div>`:v<0?`<div class="b e">пропуск</div>`:`<div class="b" title="${esc(HEROES[v].name)}">${IMG(HEROES[v])}${esc(HEROES[v].ab)}</div>`)}});
   const p=profile(ps);
   const m=(l,v,max)=>`<div class="meter"><span>${l}</span><span class="bar"><i style="width:${Math.min(100,v/max*100)}%"></i></span><b>${+v.toFixed(1)}</b></div>`;
@@ -1039,7 +1062,8 @@ function teamHTML(side){
   <div class="sub">Профиль драфта</div>
   <div class="meters">${m("Контроль",p.control,6)}${m("Инициация",p.init,3)}${m("Тимфайт",p.aoe,5)}${m("Сейв/хил",p.save,3)}${m("Пуш",p.push,4)}${m("Физ. урон",p.ph,4)}${m("Маг. урон",p.mg,4)}${m("Лейт",p.late,3)}</div>`;
 }
-function renderTeams(){ $("#teamRad").innerHTML=teamHTML("rad"); $("#teamDire").innerHTML=teamHTML("dire"); }
+function renderTeams(){ $("#teamRad").innerHTML=teamHTML("rad"); $("#teamDire").innerHTML=teamHTML("dire");
+  document.querySelectorAll(".possel").forEach(sel=>sel.onchange=()=>{ setLock(sel.dataset.team,+sel.dataset.hid,+sel.value); render(); }); }
 
 function renderTurn(){
   const el=$("#turn");
@@ -1146,13 +1170,13 @@ function renderHints(){
   });
   const col=p=>`<div class="pcol"><h5><span>Поз. <b>${p}</b> · ${POSNAME[p]}</span></h5>${
     groups[p].length?groups[p].map(x=>{const why=shortReason(x.id,team,act)+(x.moved.length?" · "+x.moved.join(", "):"");
-      return `<button class="prow${x.pool?" pool":""}" data-id="${x.id}" title="${esc(HEROES[x.id].name+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
+      return `<button class="prow${x.pool?" pool":""}" data-id="${x.id}" data-pos="${p}" title="${esc(HEROES[x.id].name+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
     :'<span class="muted">нет подходящих</span>'}</div>`;
   el.innerHTML=`<div class="hints-head"><h4>${title}</h4><span class="muted" style="font-size:13px">${team==="A"?"Прогноз по модели — поставь фактический "+(act==="B"?"бан":"пик")+" соперника. ":""}${expl}${hasPicks?" Свободные позиции: <b style=\"color:var(--fg)\">"+(open.join(", ")||"—")+"</b>.":""}</span></div>
     ${poolMode?'<div class="muted" style="font-size:12px">Жёлтая полоса — герой из пула команды, он идёт первым в колонке своего игрока.</div>':""}
     <div class="pcols">${open.map(col).join("")}</div>`;
   el.querySelectorAll(".prow").forEach(b=>{
-    b.onclick=()=>{S.sel=+b.dataset.id;renderPool();renderDetail()};
+    b.onclick=()=>{S.sel=+b.dataset.id;S.selPos=+b.dataset.pos;S.selFor=S.sel;renderPool();renderDetail()};
     b.ondblclick=()=>{S.sel=+b.dataset.id;playerConfirm()};
   });
 }
@@ -1221,7 +1245,7 @@ function recordFromState(){
     order: AP()?S.order.slice(AP_BANS).map(o=>o.side).join(""):undefined,
     tok: Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,"0")).join(""), res:null,
     draft:S.draft.slice(),name:"",
-    log:S.log.map(e=>({i:e.i,team:e.team,act:e.act,id:e.id,r:e.g?e.g.rank:null,b:e.g?e.g.best:null}))};
+    log:S.log.map(e=>({i:e.i,team:e.team,act:e.act,id:e.id,r:e.g?e.g.rank:null,b:e.g?e.g.best:null,p:e.id>=0&&S.locks[e.id]?S.locks[e.id]:undefined}))};
 }
 function histUpsert(rec){
   const l=histLoad(), k=l.findIndex(x=>x.id===rec.id);
@@ -1240,6 +1264,7 @@ function stateFromRecord(r){
   st.playerSide=r.side==="dire"?"dire":"rad"; st.playerFirst=!!r.first; st.diff=r.diff||"normal";
   st.order=r.mode==="allpick"?orderFromStr(r.order):null;
   st.draft=r.draft.slice(); st.step=r.draft.length; st.draftId=r.id;
+  st.locks={}; (r.log||[]).forEach(e=>{ if(e.p&&e.id>=0) st.locks[e.id]=e.p });
   st.log=(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:e.id,g:e.r?{rank:e.r,best:e.b??null,cls:e.r<=3?"g-a":e.r<=10?"g-b":"g-c",txt:e.r<=3?"отлично":e.r<=10?"неплохо":"можно лучше"}:null}));
   return st;
 }
@@ -1261,11 +1286,11 @@ let HREMOTE=null, HREMOTE_ERR="", HSRC="all";
 const idToName=x=>x==null?null:x<0?"-":HEROES[x].name;
 const nameToId=n=>n==null?null:n==="-"?-1:(BYNAME[n]??null);
 function toDb(r){return {id:r.id,created_at:new Date(r.t).toISOString(),mode:r.mode,side:r.side,first_pick:!!r.first,order_sides:r.order||null,edit_token:r.tok||null,
-  draft:r.draft.map(idToName),log:(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,h:idToName(e.id),r:e.r,b:idToName(e.b)})),author:getNick().slice(0,32)||null}}
+  draft:r.draft.map(idToName),log:(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,h:idToName(e.id),r:e.r,b:idToName(e.b),p:e.p||undefined})),author:getNick().slice(0,32)||null}}
 function fromDb(x){
   const draft=(x.draft||[]).map(nameToId);
   return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:x.first_pick,order:x.order_sides||undefined,res:x.result||null,draft,name:"",author:x.author||"",remote:true,
-    log:(x.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:nameToId(e.h),r:e.r,b:nameToId(e.b)}))};
+    log:(x.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:nameToId(e.h),r:e.r,b:nameToId(e.b),p:e.p}))};
 }
 // новые ключи (sb_publishable_…) передаются только в заголовке apikey; старый anon-ключ (JWT) работает так же
 const dbHeaders=()=>({apikey:DB.key,"Content-Type":"application/json"});
@@ -1440,7 +1465,7 @@ function showView(v){
   if(isPage){
     clearTimeout(STATES.ai.aiTimer);
     if(v==="history"){ $("#navHint").textContent=dbOn()?"общая история драфтов всех посетителей":"законченные драфты и их разбор"; renderHistory(); dbFetch(); }
-    else if(v==="teams"){ $("#navHint").textContent="все команды турнира и как играют их игроки"; renderTeams(); }
+    else if(v==="teams"){ $("#navHint").textContent="все команды турнира и как играют их игроки"; renderTeamsTab(); }
     else { $("#navHint").textContent="пул нашей команды и разведка соперника"; renderPrep(); }
   } else {
     if(v!==MODE) setMode(v); else { $("#navHint").textContent=MODE_HINT[v]; render(); scheduleAI(); }
@@ -1481,16 +1506,16 @@ const plCache=acc=>{try{const v=JSON.parse(localStorage.getItem("cm_pl_"+acc));r
 const plCacheSet=(acc,d)=>{try{localStorage.setItem("cm_pl_"+acc,JSON.stringify({t:Date.now(),d}))}catch(e){}};
 let TSEL=null, TQUERY="", TLOADING=new Set(), TMSG={};
 async function loadVsclTeam(t){
-  if(TLOADING.has(t.id)) return; TLOADING.add(t.id); TMSG[t.id]=""; renderTeams();
+  if(TLOADING.has(t.id)) return; TLOADING.add(t.id); TMSG[t.id]=""; renderTeamsTab();
   let fails=0;
   for(const p of t.players){
     if(plCache(p.acc)) continue;
     try{ const r=await fetchPlayer(p.acc); plCacheSet(p.acc,{heroes:r.heroes}); }
     catch(e){ fails++; plCacheSet(p.acc,{heroes:[],err:e.message}); }
     await new Promise(r=>setTimeout(r,250));
-    if(VIEW==="teams") renderTeams();
+    if(VIEW==="teams") renderTeamsTab();
   }
-  TLOADING.delete(t.id); TMSG[t.id]=fails?`у ${fails} игроков нет открытой статистики`:""; renderTeams();
+  TLOADING.delete(t.id); TMSG[t.id]=fails?`у ${fails} игроков нет открытой статистики`:""; renderTeamsTab();
 }
 const tLoaded=t=>t.players.every(p=>plCache(p.acc));
 function roleGuess(heroes){
@@ -1507,7 +1532,7 @@ function teamTopHeroes(t,n=10){
 function vsclOpp(t){return {id:"vscl-"+t.id,name:t.name,players:t.players.map(p=>({acc:p.acc,name:p.nick,heroes:(plCache(p.acc)||{heroes:[]}).heroes.slice(0,15)}))}}
 function makeOpponent(t){
   const o=vsclOpp(t); TEAM.opps=TEAM.opps.filter(x=>x.id!==o.id); TEAM.opps.push(o); TEAM.activeOpp=o.id; USE.scout=true; saveUse();
-  $("#useScout").checked=true; saveTeam(); TMSG[t.id]="выбран соперником — разведка включена в драфтах"; renderTeams();
+  $("#useScout").checked=true; saveTeam(); TMSG[t.id]="выбран соперником — разведка включена в драфтах"; renderTeamsTab();
 }
 function makeOurs(t){
   TEAM.name=t.name; TEAM.vsclId=t.id;
@@ -1516,7 +1541,7 @@ function makeOurs(t){
     const old=TEAM.players.find(x=>x.acc===p.acc);
     return {nick:p.nick,acc:p.acc,pos:old?old.pos:(rg[0]?rg[0][0]:Math.min(5,k+1)),heroes:old&&old.heroes.length?old.heroes:heroes.map(x=>x.h),stats:Object.fromEntries(heroes.map(x=>[x.h,{g:x.g,w:x.w}]))};
   });
-  saveTeam(); TMSG[t.id]="записано как наша команда — проверь позиции во вкладке «Подготовка»"; renderTeams();
+  saveTeam(); TMSG[t.id]="записано как наша команда — проверь позиции во вкладке «Подготовка»"; renderTeamsTab();
 }
 function teamCardHTML(t){
   const top=teamTopHeroes(t,8), isOurs=TEAM.vsclId===t.id, isOpp=TEAM.activeOpp==="vscl-"+t.id;
@@ -1548,11 +1573,11 @@ function teamDetailHTML(t){
     </div>
     ${bans.length?`<div class="card"><h4>Что банить против них</h4>${bans.map(r=>`<div class="stat-row">${IMG(HEROES[r.id],"pimg")}<span style="min-width:120px">${esc(HEROES[r.id].name)}</span><span class="muted" style="font-size:12px;flex:1">играют: ${esc(r.who.join(", "))}</span></div>`).join("")}</div>`:""}`;
 }
-function renderTeams(){
+function renderTeamsTab(){
   const v=$("#teamsView"); if(VIEW!=="teams") return;
   const t=TSEL&&VSCL.find(x=>x.id===TSEL);
   if(t){ v.innerHTML=teamDetailHTML(t);
-    $("#tBack").onclick=()=>{TSEL=null;renderTeams()};
+    $("#tBack").onclick=()=>{TSEL=null;renderTeamsTab()};
     const l=$("#tLoad"); if(l) l.onclick=()=>loadVsclTeam(t);
     const rl=$("#tReload"); if(rl) rl.onclick=()=>{t.players.forEach(p=>{try{localStorage.removeItem("cm_pl_"+p.acc)}catch(e){}});loadVsclTeam(t)};
     $("#tOpp").onclick=()=>makeOpponent(t); $("#tOurs").onclick=()=>makeOurs(t);
@@ -1565,8 +1590,8 @@ function renderTeams(){
     </div>
     <p class="note" style="margin:0">${esc(VSCL_SRC.title)} — ${VSCL.length} команд, составы с <a href="${VSCL_SRC.url}" target="_blank" rel="noopener" style="color:var(--gold)">vscl.ru</a> на ${VSCL_SRC.date}. Открой команду и нажми «Загрузить статистику игроков»: тренажёр подтянет из OpenDota, на ком каждый играл за 180 дней и на каких позициях. Потом — «Сделать соперником», и подсказки по банам в драфтах будут учитывать именно их.</p>
     <div class="tgrid">${[...ours,...rest].map(teamCardHTML).join("")||'<span class="muted">Ничего не найдено</span>'}</div>`;
-  const s=$("#tSearch"); s.oninput=e=>{TQUERY=e.target.value;const pos=e.target.selectionStart;renderTeams();const n=$("#tSearch");n.focus();n.setSelectionRange(pos,pos)};
-  v.querySelectorAll(".tcard").forEach(b=>b.onclick=()=>{TSEL=b.dataset.tid;renderTeams();window.scrollTo(0,0)});
+  const s=$("#tSearch"); s.oninput=e=>{TQUERY=e.target.value;const pos=e.target.selectionStart;renderTeamsTab();const n=$("#tSearch");n.focus();n.setSelectionRange(pos,pos)};
+  v.querySelectorAll(".tcard").forEach(b=>b.onclick=()=>{TSEL=b.dataset.tid;renderTeamsTab();window.scrollTo(0,0)});
 }
 
 /* ===== ПОДГОТОВКА: синхронизация команды через базу ===== */
@@ -1705,7 +1730,7 @@ function wirePrep(){
 
 /* ===== EVENTS ===== */
 buildPool();
-$("#pool").addEventListener("click",e=>{const b=e.target.closest(".hero");if(!b)return;const id=+b.dataset.id;S.sel=id;renderPool();renderDetail()});
+$("#pool").addEventListener("click",e=>{const b=e.target.closest(".hero");if(!b)return;const id=+b.dataset.id;S.sel=id;S.selPos=null;renderPool();renderDetail()});
 $("#pool").addEventListener("dblclick",e=>{const b=e.target.closest(".hero");if(!b)return;S.sel=+b.dataset.id;playerConfirm()});
 $("#posChips").addEventListener("click",e=>{const c=e.target.closest(".chip");if(!c)return;S.filterPos=+c.dataset.pos;renderPool()});
 
