@@ -1505,15 +1505,19 @@ async function fetchT(url,opt={},ms=7000){
   try{ return await fetch(url,{...opt,signal:ac.signal}) } catch(e){ throw new Error(e.name==="AbortError"?"сервер не ответил за "+Math.round(ms/1000)+" с":"нет связи") } finally{ clearTimeout(tm) }
 }
 /* STRATZ: один запрос на всю пачку игроков, с реальными позициями по каждому герою */
+let SZ_PLAYERS_NOTE="";
 async function fetchPlayersStratz(accs){
-  if(!szToken()) return {};
+  SZ_PLAYERS_NOTE="";
+  if(!szToken()){ SZ_PLAYERS_NOTE="STRATZ не подключён в этом браузере — нажми «Подключить STRATZ» вверху, и загрузка будет в разы быстрее"; return {}; }
+  if(SZ.status==="loading"){ for(let k=0;k<60&&SZ.status==="loading";k++) await new Promise(r=>setTimeout(r,250)); }
   if(SZ.status!=="ok") await loadStratz(false);
-  if(SZ.status!=="ok") return {};
+  if(SZ.status!=="ok"){ SZ_PLAYERS_NOTE="STRATZ: "+(SZ.msg||"не удалось подключиться"); return {}; }
   const since=Math.floor(Date.now()/1000)-180*86400;
   const q=`{ players(steamAccountIds:[${accs.map(a=>+a).join(",")}]){ steamAccountId steamAccount{ name } heroesPerformance(request:{startDateTime:${since}, take:1000}, take:60){ heroId matchCount winCount positionScore{ id matchCount } } } }`;
   const r=await fetchT(SZ_URL,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+szToken()},body:JSON.stringify({query:q})},12000);
-  if(!r.ok) throw new Error("STRATZ "+r.status);
+  if(!r.ok) throw new Error("STRATZ ответил "+r.status);
   const j=await r.json(); const out={};
+  if(j.errors&&j.errors.length&&!(j.data&&j.data.players)) throw new Error("STRATZ: "+j.errors[0].message);
   ((j.data&&j.data.players)||[]).forEach(pl=>{
     if(!pl) return;
     const heroes=(pl.heroesPerformance||[]).filter(x=>x.matchCount>0&&SZ.id[x.heroId]!=null).map(x=>{
@@ -1540,12 +1544,12 @@ async function fetchPlayersFast(raws,{withName=false,onProgress}={}){
   const res={}, accs=[];
   raws.forEach(raw=>{ try{ const a=accOf(raw); accs.push(a); res[raw]={acc:a} }catch(e){ res[raw]={err:e.message} } });
   const uniq=[...new Set(accs)]; let got={};
-  try{ got=await fetchPlayersStratz(uniq) }catch(e){ got={} }
-  await Promise.all(uniq.map(async a=>{
-    if(got[a]) return;
+  try{ got=await fetchPlayersStratz(uniq) }catch(e){ got={}; SZ_PLAYERS_NOTE=e.message }
+  const rest=uniq.filter(a=>!got[a]); let qi=0;
+  async function worker(){ while(qi<rest.length){ const a=rest[qi++];
     try{ got[a]=await fetchPlayerOD(a,withName) }catch(e){ got[a]={err:e.message} }
-    if(onProgress) onProgress();
-  }));
+    if(onProgress) onProgress(); } }
+  await Promise.all([worker(),worker(),worker()]);   // OpenDota: не больше 3 запросов одновременно
   raws.forEach(raw=>{ const r=res[raw]; if(r.acc) res[raw]={acc:r.acc,...got[r.acc]} });
   return res;
 }
@@ -1571,7 +1575,7 @@ async function loadVsclTeam(t){
   let fails=0, srcs=new Set();
   need.forEach(a=>{ const r=res[a]; if(r.err){ fails++; plCacheSet(a,{heroes:[],err:r.err}) } else { srcs.add(r.src); plCacheSet(a,{heroes:r.heroes,src:r.src}) } });
   TLOADING.delete(t.id);
-  TMSG[t.id]=(need.length?`загружено за ${((Date.now()-t0)/1000).toFixed(1)} с${srcs.size?" ("+[...srcs].join(" + ")+")":""}`:"")+(fails?` · не загрузилось у ${fails} — подробности у игроков ниже, «Загрузить» ещё раз догрузит только их`:"");
+  TMSG[t.id]=(need.length?`загружено за ${((Date.now()-t0)/1000).toFixed(1)} с${srcs.size?" ("+[...srcs].join(" + ")+")":""}`:"")+(fails?` · не загрузилось у ${fails} — подробности у игроков ниже, «Загрузить» ещё раз догрузит только их`:"")+(SZ_PLAYERS_NOTE?` · ${SZ_PLAYERS_NOTE}`:"");
   renderTeamsTab();
 }
 const plOk=acc=>{const c=plCache(acc);return !!c&&!(c.err&&c.err!==PRIVATE_MSG)};
