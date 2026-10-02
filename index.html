@@ -45,7 +45,20 @@ button{cursor:pointer}
 .prow .v{font-family:var(--f-mono);font-size:12px;color:var(--gold);text-align:right}
 .hints-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
 /* history */
-body.view-history .settings, body.view-history #timeline, body.view-history .board, body.view-history #stratzPanel{display:none!important}
+body.view-page .settings, body.view-page #timeline, body.view-page .board, body.view-page #stratzPanel{display:none!important}
+.prep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:12px;align-items:start}
+.prow-in{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.prow-in input,.prow-in select,.prep input,.prep select{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-width:0}
+.player{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:8px}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.hchip{display:inline-flex;align-items:center;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:2px 4px 2px 2px;font-size:12px}
+.hchip img{width:36px;aspect-ratio:16/9;object-fit:cover;border-radius:2px}
+.hchip .gw{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.hchip button{background:none;border:0;color:var(--muted);padding:0 2px;font-size:14px;line-height:1}
+.hchip button:hover{color:var(--bad)}
+.prow.pool{box-shadow:inset 3px 0 0 var(--gold)}
+.res-w{color:var(--good)} .res-l{color:var(--bad)}
+.badge.win{border-color:var(--good);color:var(--good)} .badge.loss{border-color:var(--bad);color:var(--bad)}
 .hist{display:flex;flex-direction:column;gap:12px}
 .hist-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .hist-head h2{margin:0;font-family:var(--f-disp);font-size:26px;letter-spacing:.05em;text-transform:uppercase;margin-right:auto}
@@ -111,7 +124,7 @@ select{background:var(--panel2);border:1px solid var(--line);border-radius:4px;p
 .tl .n{font-size:10px;color:var(--muted);font-family:var(--f-mono)}
 .tl .v{font-size:13px;font-weight:600;letter-spacing:.02em;white-space:nowrap;overflow:hidden;max-width:100%;padding:0 2px}
 .tl::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;border-radius:0 0 3px 3px}
-.tl.rad::after{background:var(--rad)} .tl.dire::after{background:var(--dire)}
+.tl.rad::after{background:var(--rad)} .tl.dire::after{background:var(--dire)} .tl.neutral::after{background:var(--muted)}
 .tl.ban .v{color:var(--muted);text-decoration:line-through}
 .tl.pick{background:var(--panel2)}
 .tl.cur{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
@@ -255,6 +268,8 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     <div class="tabs" role="tablist">
       <button class="tab on" data-mode="ai" role="tab">Тренировка</button>
       <button class="tab" data-mode="manual" role="tab">Турнир</button>
+      <button class="tab" data-mode="allpick" role="tab">All Pick</button>
+      <button class="tab" data-mode="prep" role="tab">Подготовка</button>
       <button class="tab" data-mode="history" role="tab">История</button>
     </div>
     <span class="nav-hint" id="navHint">драфт против компьютера</span>
@@ -273,6 +288,8 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
         <select id="setDiff"><option value="easy">Лёгкий</option><option value="normal" selected>Нормальный</option><option value="hard">Сильный</option></select></div>
       <label class="chk"><input type="checkbox" id="setTimer"> Таймер</label>
       <label class="chk"><input type="checkbox" id="setHints" checked> Подсказки</label>
+      <label class="chk" title="Подсказки по нашим пикам в первую очередь показывают героев из пула команды"><input type="checkbox" id="usePool" checked> Наш пул</label>
+      <label class="chk" title="Подсказки по банам учитывают героев, на которых играет выбранный соперник"><input type="checkbox" id="useScout" checked> Разведка</label>
       <button class="btn" id="undoBtn">Отменить ход</button>
       <button class="btn" id="stratzBtn">Ключ STRATZ</button>
       <button class="btn primary" id="newBtn">Новый драфт</button>
@@ -290,6 +307,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     <div id="stratzMsg" class="muted"></div>
   </section>
   <section id="historyView" class="hist" hidden style="display:none"></section>
+  <section id="prepView" class="hist" hidden style="display:none"></section>
   <div class="timeline" id="timeline"></div>
 
   <div class="board">
@@ -610,7 +628,7 @@ async function loadHeroStats(force){
   }catch(e){DATA.status="fail"}
   renderData(); render();
 }
-function allPicked(){const r=new Set();Object.values(STATES).forEach(st=>st.draft.forEach((v,i)=>{if(v!=null&&v>=0&&ORDER[i].act==="P")r.add(v)}));return [...r]}
+function allPicked(){const r=new Set();Object.entries(STATES).forEach(([m,st])=>{const o=ordOf(m,st);st.draft.forEach((v,i)=>{if(v!=null&&v>=0&&o[i]&&o[i].act==="P")r.add(v)})});return [...r]}
 function dataAdv(a,b){ // насколько a выигрывает у b, в процентных пунктах, по статистике (STRATZ приоритетнее)
   let w,g,src;
   const sa=SZ.vs[a]&&SZ.vs[a][b], sb=SZ.vs[b]&&SZ.vs[b][a];
@@ -732,28 +750,70 @@ function renderData(){
 }
 
 /* ===== DRAFT ORDER (7.34+ CM, 24 steps) ===== */
-const ORDER = "FB FB SB SB FB SB SB FP SP FB FB SB SP FP FP SP SP FP FB SB FB SB FP SP".split(" ").map(s=>({side:s[0],act:s[1]}));
-const PHASE = i=> i<7?"Баны · фаза 1": i<9?"Пики · фаза 1": i<12?"Баны · фаза 2": i<18?"Пики · фаза 2": i<22?"Баны · фаза 3":"Пики · фаза 3";
+const ORDER_CM = "FB FB SB SB FB SB SB FP SP FB FB SB SP FP FP SP SP FP FB SB FB SB FP SP".split(" ").map(s=>({side:s[0],act:s[1]}));
+/* All Pick: 16 банов (голоса игроков + автобаны), затем 3 раунда пиков 2+2, 2+2, 1+1; порядок внутри раунда свободный */
+const AP_BANS=16, AP_ROUNDS=[[16,20],[20,24],[24,26]];
+const orderAP = ()=> [...Array(AP_BANS).fill("NB"), ..."FP SP FP SP FP SP FP SP FP SP".split(" ")].map(s=>({side:s[0],act:s[1]}));
+const ordOf = (mode,st)=> mode==="allpick" ? (st.order||(st.order=orderAP())) : ORDER_CM;
+const ORD = ()=> ordOf(MODE,S);
+const apRound = i=> AP_ROUNDS.findIndex(([a,b])=>i>=a&&i<b);
+const PHASE = i=> MODE==="allpick"
+  ? (i<AP_BANS?"Бан-фаза":"Пики · раунд "+(apRound(i)+1))
+  : (i<7?"Баны · фаза 1": i<9?"Пики · фаза 1": i<12?"Баны · фаза 2": i<18?"Пики · фаза 2": i<22?"Баны · фаза 3":"Пики · фаза 3");
 const STEP_TIME = i=> i<7?15:30;
 const RESERVE = 130;
 
 /* ===== STATE ===== */
-const makeState=()=>({
+const makeState=(mode)=>({
   playerSide:"rad", playerFirst:true, diff:"normal", timer:false, hints:true,
-  draft:Array(24).fill(null), step:0, sel:null, log:[], history:[],
+  order: mode==="allpick"?orderAP():null,
+  draft:Array(mode==="allpick"?AP_BANS+10:24).fill(null), step:0, sel:null, log:[], history:[],
   stepLeft:15, reserve:{P:RESERVE,A:RESERVE}, aiTimer:null, filterPos:0, search:""
 });
-const STATES={ai:makeState(),manual:makeState()};
+const STATES={ai:makeState("ai"),manual:makeState("manual"),allpick:makeState("allpick")};
 let MODE="ai", S=STATES.ai;
-const MAN=()=>MODE==="manual";
+const MAN=()=>MODE!=="ai";
+const AP=()=>MODE==="allpick";
 const L=()=>MAN()?{me:"Мы",opp:"Соперник",meTag:"МЫ",oppTag:"соперник",our:"нашими",ours:"наших"}:{me:"Ты",opp:"ИИ",meTag:"ТЫ",oppTag:"компьютер",our:"твоими",ours:"твоих"};
-const teamOfStep = i => (ORDER[i].side==="F") === S.playerFirst ? "P" : "A";
-const sideOf = t => t==="P"? S.playerSide : (S.playerSide==="rad"?"dire":"rad");
+const teamOfStep = i => { const sd=ORD()[i].side; return sd==="N" ? "N" : (sd==="F") === S.playerFirst ? "P" : "A"; };
+const evalTeamOf = t => t==="N" ? "P" : t;
+const sideOf = t => t==="N" ? "neutral" : t==="P"? S.playerSide : (S.playerSide==="rad"?"dire":"rad");
 const other = t => t==="P"?"A":"P";
-const done = ()=> S.step>=24;
-function picks(team){const r=[];ORDER.forEach((o,i)=>{if(o.act==="P"&&teamOfStep(i)===team&&S.draft[i]!=null&&S.draft[i]>=0)r.push(S.draft[i])});return r}
-function bans(team){const r=[];ORDER.forEach((o,i)=>{if(o.act==="B"&&teamOfStep(i)===team&&i<S.step)r.push(S.draft[i])});return r}
+const done = ()=> S.step>=ORD().length;
+function picks(team){const r=[];ORD().forEach((o,i)=>{if(o.act==="P"&&teamOfStep(i)===team&&S.draft[i]!=null&&S.draft[i]>=0)r.push(S.draft[i])});return r}
+function bans(team){const r=[];ORD().forEach((o,i)=>{if(o.act==="B"&&teamOfStep(i)===team&&i<S.step)r.push(S.draft[i])});return r}
 function unavailable(){return new Set(S.draft.filter(x=>x!=null&&x>=0))}
+
+/* ===== КОМАНДА И РАЗВЕДКА ===== */
+const TEAM_KEY="cm_team", USE_KEY="cm_use";
+const emptyPlayer=pos=>({nick:"",acc:"",pos,heroes:[],stats:{}});
+function loadTeam(){try{const t=JSON.parse(localStorage.getItem(TEAM_KEY));if(t&&Array.isArray(t.players))return t}catch(e){}
+  return {code:"",name:"",players:[1,2,3,4,5].map(emptyPlayer),opps:[],activeOpp:null}}
+let TEAM=loadTeam();
+let USE=(()=>{try{return {pool:true,scout:true,...JSON.parse(localStorage.getItem(USE_KEY)||"{}")}}catch(e){return {pool:true,scout:true}}})();
+const saveUse=()=>{try{localStorage.setItem(USE_KEY,JSON.stringify(USE))}catch(e){}};
+let teamSaveTimer=null;
+function saveTeam(remote=true){
+  try{localStorage.setItem(TEAM_KEY,JSON.stringify(TEAM))}catch(e){}
+  if(remote&&TEAM.code&&typeof dbOn==="function"&&dbOn()){clearTimeout(teamSaveTimer);teamSaveTimer=setTimeout(()=>teamRemoteSave(),1200)}
+}
+const activeOpp=()=>TEAM.opps.find(o=>o.id===TEAM.activeOpp)||null;
+function poolOwners(id){const n=HEROES[id].name;return TEAM.players.filter(p=>p.heroes.includes(n)).map(p=>({nick:p.nick||("поз. "+p.pos),pos:+p.pos,st:p.stats&&p.stats[n]}))}
+function comfortScore(g,w){ if(!g) return 0; const wr=w/g; return Math.min(1,g/15)*1.2 + Math.max(-0.4,Math.min(0.8,(wr-0.5)*4))*Math.min(1,g/10) }
+function poolBonus(id){
+  if(!USE.pool) return {v:0,who:""};
+  const o=poolOwners(id); if(!o.length) return {v:0,who:""};
+  const best=Math.max(...o.map(x=>x.st?comfortScore(x.st.g,x.st.w):0));
+  return {v:Math.min(2,0.8+best*0.6), who:o.map(x=>x.nick).join(", ")};
+}
+function scoutInfo(id){
+  const o=activeOpp(); if(!o) return {v:0,who:"",list:[]};
+  const n=HEROES[id].name, list=[];
+  o.players.forEach(p=>(p.heroes||[]).forEach(x=>{ if(x.h===n) list.push({name:p.name||p.acc,g:x.g,w:x.w}) }));
+  const v=Math.min(2.5,list.reduce((s,x)=>s+comfortScore(x.g,x.w),0));
+  return {v, who:list.map(x=>`${x.name} ${x.g} игр`).join(", "), list};
+}
+const scoutBonus=id=>USE.scout?scoutInfo(id):{v:0,who:"",list:[]};
 
 /* ===== EVALUATION ===== */
 const POSFIT=[3,2,1.2,0.8];
@@ -797,8 +857,9 @@ function evalHero(id,team){
   const ctr=enemies.reduce((s,e)=>s+CTR[id][e],0);
   const thr=enemies.reduce((s,e)=>s+CTR[e][id],0);
   const need=needBonus(id,allies,enemies); const nd=sum(need);
-  const total=h.meta*0.9+role+syn+ctr*0.9-thr*0.9+nd;
-  return {total,meta:h.meta,role,syn,ctr,thr,need,offrole:d<0};
+  const cf = team==="P" ? poolBonus(id) : scoutBonus(id);
+  const total=h.meta*0.9+role+syn+ctr*0.9-thr*0.9+nd+cf.v;
+  return {total,meta:h.meta,role,syn,ctr,thr,need,offrole:d<0,comfort:cf.v,comfortWho:cf.who};
 }
 const banValue=(id,team)=>evalHero(id,other(team)).total;
 /* какие позиции у команды ещё свободны и встаёт ли герой на одну из них */
@@ -820,6 +881,7 @@ function scoreAll(team,act){
 function shortReason(id,team,act){
   if(act==="B"){
     const opp=other(team),e=evalHero(id,opp),bits=[],us=team==="P";
+    if(e.comfort>0.3) bits.push(us?"у них: "+e.comfortWho:"наш пул: "+e.comfortWho);
     if(e.syn>1) bits.push(us?"связка у соперника":"наша связка");
     if(e.ctr>1) bits.push(us?"контрит "+L().ours:"контрит их пики");
     if(e.meta>1.2) bits.push("сильная мета");
@@ -828,6 +890,7 @@ function shortReason(id,team,act){
   }
   const e=evalHero(id,team),bits=[];
   const allies=picks(team),enemies=picks(other(team));
+  if(e.comfort>0.3) bits.push(team==="P"?"пул: "+e.comfortWho:"играет: "+e.comfortWho);
   const bs=allies.map(a=>[a,SYN[id][a]]).sort((x,y)=>y[1]-x[1])[0];
   if(bs&&bs[1]>=0.8) bits.push("с "+HEROES[bs[0]].ab);
   const bc=enemies.map(x=>[x,CTR[id][x]]).sort((x,y)=>y[1]-x[1])[0];
@@ -841,7 +904,7 @@ function shortReason(id,team,act){
 /* ===== AI ===== */
 function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
 function aiChoose(){
-  const act=ORDER[S.step].act, sd={easy:2.2,normal:0.9,hard:0.3}[S.diff];
+  const act=ORD()[S.step].act, sd={easy:2.2,normal:0.9,hard:0.3}[S.diff];
   const list=scoreAll("A",act).map(x=>({...x,n:x.v+gauss()*sd}));
   list.sort((a,b)=>b.n-a.n);
   return list[0].id;
@@ -860,9 +923,9 @@ function gradeOf(id,team,act){
   return {rank,cls,txt,best:list[0].id};
 }
 function commit(id,team){
-  const i=S.step, act=ORDER[i].act;
-  if(team==="P"||MAN()) S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve}));
-  const g = ((team==="P"||MAN()) && id>=0) ? gradeOf(id,team,act) : null;
+  const i=S.step, act=ORD()[i].act;
+  if(team==="P"||MAN()) S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve,order:S.order}));
+  const g = ((team==="P"||MAN()) && id>=0) ? gradeOf(id,evalTeamOf(team),act) : null;
   S.draft[i]=id; S.step++; S.sel=null;
   S.log.push({i,team,act,id,g});
   if(!S.draftId) S.draftId=newDraftId();
@@ -870,6 +933,19 @@ function commit(id,team){
   if(act==="P"&&id>=0){ loadMatchups(id); loadStratzMU(id); }
   S.stepLeft=done()?0:STEP_TIME(S.step);
   render(); scheduleAI();
+}
+function apEndBans(){
+  if(!AP()||done()||ORD()[S.step].act!=="B") return;
+  S.history.push(JSON.stringify({draft:S.draft,step:S.step,log:S.log,reserve:S.reserve,order:S.order}));
+  while(!done()&&ORD()[S.step].act==="B"){ S.draft[S.step]=-1; S.log.push({i:S.step,team:"N",act:"B",id:-1,g:null}); S.step++; }
+  S.sel=null; render();
+}
+function apSwap(){
+  if(!AP()||done()) return;
+  const i=S.step, o=S.order; if(o[i].act!=="P") return;
+  const r=AP_ROUNDS[apRound(i)];
+  for(let j=i+1;j<r[1];j++) if(o[j].side!==o[i].side){ const t=o[i].side; o[i]={...o[i],side:o[j].side}; o[j]={...o[j],side:t}; break; }
+  render();
 }
 function playerConfirm(){
   if(done()||S.sel==null) return;
@@ -882,7 +958,7 @@ function undo(){
   if(!S.history.length) return;
   clearTimeout(S.aiTimer);
   const h=JSON.parse(S.history.pop());
-  S.draft=h.draft;S.step=h.step;S.log=h.log;S.reserve=h.reserve;S.sel=null;S.stepLeft=STEP_TIME(S.step);
+  S.draft=h.draft;S.step=h.step;S.log=h.log;S.reserve=h.reserve;if(h.order)S.order=h.order;S.sel=null;S.stepLeft=STEP_TIME(S.step);
   render(); scheduleAI();
 }
 function newDraft(){
@@ -890,7 +966,7 @@ function newDraft(){
   S.playerSide=$("#setSide").value; S.diff=$("#setDiff").value;
   const o=$("#setOrder").value; S.playerFirst=o==="first"?true:o==="second"?false:Math.random()<.5;
   S.timer=!MAN()&&$("#setTimer").checked;
-  S.draft=Array(24).fill(null);S.step=0;S.sel=null;S.log=[];S.history=[];S.draftId=newDraftId();
+  S.order=AP()?orderAP():null; S.draft=Array(ORD().length).fill(null);S.step=0;S.sel=null;S.log=[];S.history=[];S.draftId=newDraftId();
   S.reserve={P:RESERVE,A:RESERVE};S.stepLeft=STEP_TIME(0);
   render(); scheduleAI();
 }
@@ -901,7 +977,7 @@ setInterval(()=>{
   if(S.stepLeft>0) S.stepLeft=Math.max(0,S.stepLeft-0.25);
   else S.reserve.P=Math.max(0,S.reserve.P-0.25);
   if(S.stepLeft<=0&&S.reserve.P<=0){
-    if(ORDER[S.step].act==="B") commit(-1,"P");
+    if(ORD()[S.step].act==="B") commit(-1,"P");
     else { const un=unavailable(); const pool=HEROES.filter(h=>!un.has(h.id)); commit(pool[Math.floor(Math.random()*pool.length)].id,"P"); }
     return;
   }
@@ -922,30 +998,30 @@ function buildPool(){
   $("#posChips").innerHTML=[0,1,2,3,4,5].map(p=>`<button class="chip" data-pos="${p}">${p?p+" · "+POSNAME[p]:"Все"}</button>`).join("");
 }
 
-function renderTimeline(){ $("#timeline").innerHTML=timelineHTML(); }
+function renderTimeline(){ const t=$("#timeline"); t.style.gridTemplateColumns=`repeat(${ORD().length},minmax(34px,1fr))`; t.innerHTML=timelineHTML(); }
 function timelineHTML(){
-  return ORDER.map((o,i)=>{
+  return ORD().map((o,i)=>{
     const team=teamOfStep(i),side=sideOf(team),v=S.draft[i];
     const lbl= v==null? (o.act==="B"?"бан":"пик") : v<0?"—":HEROES[v].ab;
-    const gap=(i===7||i===9||i===12||i===18||i===22)?" gap":"";
-    return `<div class="tl ${side} ${o.act==="B"?"ban":"pick"}${i===S.step?" cur":""}${gap}" title="${i+1}. ${team==="P"?L().me:L().opp} · ${o.act==="B"?"бан":"пик"}${v!=null&&v>=0?": "+esc(HEROES[v].name):""}">${v!=null&&v>=0?IMG(HEROES[v]):""}<span class="n">${i+1}</span><span class="v">${esc(lbl)}</span></div>`;
+    const o0=ORD()[i-1]; const gap=(i>0&&(o0.act!==o.act||(AP()&&apRound(i)!==apRound(i-1))))?" gap":"";
+    return `<div class="tl ${side} ${o.act==="B"?"ban":"pick"}${i===S.step?" cur":""}${gap}" title="${i+1}. ${team==="N"?"общий":team==="P"?L().me:L().opp} · ${o.act==="B"?"бан":"пик"}${v!=null&&v>=0?": "+esc(HEROES[v].name):""}">${v!=null&&v>=0?IMG(HEROES[v]):""}<span class="n">${i+1}</span><span class="v">${esc(lbl)}</span></div>`;
   }).join("");
 }
 
 function teamHTML(side){
   const team = sideOf("P")===side?"P":"A";
   const ps=picks(team), assign=bestAssign(ps);
-  const total=ORDER.filter((o,i)=>o.act==="P"&&teamOfStep(i)===team).length;
+  const total=ORD().filter((o,i)=>o.act==="P"&&teamOfStep(i)===team).length;
   const slots=[];for(let k=0;k<5;k++){const id=ps[k];
     slots.push(id==null?`<div class="slot empty">пик ${k+1}</div>`:`<div class="slot">${IMG(HEROES[id],"pimg")}<b style="font-family:var(--f-disp);font-size:17px">${esc(HEROES[id].ab)}</b><span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(HEROES[id].name)}</span><span class="pos">поз. ${assign.map[k]}</span></div>`)}
-  const bl=[];ORDER.forEach((o,i)=>{if(o.act==="B"&&teamOfStep(i)===team){const v=S.draft[i];bl.push(v==null?`<div class="b e">—</div>`:v<0?`<div class="b e">пропуск</div>`:`<div class="b" title="${esc(HEROES[v].name)}">${IMG(HEROES[v])}${esc(HEROES[v].ab)}</div>`)}});
+  const bl=[];ORD().forEach((o,i)=>{if(o.act==="B"&&teamOfStep(i)===team){const v=S.draft[i];bl.push(v==null?`<div class="b e">—</div>`:v<0?`<div class="b e">пропуск</div>`:`<div class="b" title="${esc(HEROES[v].name)}">${IMG(HEROES[v])}${esc(HEROES[v].ab)}</div>`)}});
   const p=profile(ps);
   const m=(l,v,max)=>`<div class="meter"><span>${l}</span><span class="bar"><i style="width:${Math.min(100,v/max*100)}%"></i></span><b>${+v.toFixed(1)}</b></div>`;
   const first = (team==="P")===S.playerFirst;
   const dz = k => (team==="P"||MAN()) ? ` dz" data-team="${team}" data-zone="${k}` : "";
   return `<h2>${side==="rad"?"Radiant":"Dire"} <span>${team==="P"?'<span class="you">'+L().meTag+'</span>':L().oppTag} · ${first?"1-й пик":"2-й пик"}</span></h2>
   <div class="slots${dz("P")}">${slots.join("")}</div>
-  <div class="sub">Баны</div><div class="bans${dz("B")}">${bl.join("")}</div>
+  ${AP()?"":`<div class="sub">Баны</div><div class="bans${dz("B")}">${bl.join("")}</div>`}
   <div class="sub">Профиль драфта</div>
   <div class="meters">${m("Контроль",p.control,6)}${m("Инициация",p.init,3)}${m("Тимфайт",p.aoe,5)}${m("Сейв/хил",p.save,3)}${m("Пуш",p.push,4)}${m("Физ. урон",p.ph,4)}${m("Маг. урон",p.mg,4)}${m("Лейт",p.late,3)}</div>`;
 }
@@ -954,21 +1030,27 @@ function renderTeams(){ $("#teamRad").innerHTML=teamHTML("rad"); $("#teamDire").
 function renderTurn(){
   const el=$("#turn");
   if(done()){el.className="turn";el.innerHTML=`<span class="who">Драфт завершён</span><span class="phase">разбор ниже · «Отменить ход» вернёт ${MAN()?"на шаг назад":"тебя к последнему действию"}</span>`;return}
-  const team=teamOfStep(S.step),act=ORDER[S.step].act,mine=team==="P";
+  const team=teamOfStep(S.step),act=ORD()[S.step].act,mine=team==="P"||team==="N";
   el.className="turn"+(mine?" mine":MAN()?" opp":"");
   const clock=S.timer&&!MAN()?`<span class="clock">ход <b>${fmtT(mine?S.stepLeft:STEP_TIME(S.step))}</b> резерв <b>${fmtT(S.reserve.P)}</b></span>`:"";
   const who = MAN()
     ? (mine?(act==="B"?"Наш бан":"Наш пик"):(act==="B"?"Бан соперника":"Пик соперника"))
     : (mine?(act==="B"?"Твой бан":"Твой пик"):(act==="B"?"Компьютер банит…":"Компьютер пикает…"));
-  const skip = act==="B"&&myAct()?`<button class="btn" id="skipBtn" title="Если бан не был сделан (кончилось время)">Пропустить бан</button>`:"";
-  el.innerHTML=`<span class="who">${who}</span><span class="phase">${PHASE(S.step)} · ход ${S.step+1} из 24</span>${clock}${skip}`;
+  const whoAP = act==="B" ? `Баны: ${S.step} из ${AP_BANS}` : (mine?"Наш пик":"Пик соперника");
+  const skip = AP()
+    ? (act==="B" ? `<button class="btn" id="skipBtn">Пропустить</button><button class="btn" id="endBansBtn">Баны закончились</button>`
+                 : `<button class="btn" id="swapBtn" title="В All Pick внутри раунда команды пикают в любом порядке">Сейчас пикает ${mine?"соперник":"наша команда"}</button>`)
+    : act==="B"&&myAct()?`<button class="btn" id="skipBtn" title="Если бан не был сделан (кончилось время)">Пропустить бан</button>`:"";
+  el.innerHTML=`<span class="who">${AP()?whoAP:who}</span><span class="phase">${PHASE(S.step)}${AP()&&act==="B"?" · отметь всех забаненных героев, включая автобаны":""} · ход ${S.step+1} из ${ORD().length}</span>${clock}${skip}`;
   const sb=$("#skipBtn"); if(sb) sb.onclick=()=>{ if(myAct()==="B") commit(-1,teamOfStep(S.step)) };
+  const eb=$("#endBansBtn"); if(eb) eb.onclick=apEndBans;
+  const sw=$("#swapBtn"); if(sw) sw.onclick=apSwap;
 }
 
 function renderPool(){
   const un=unavailable(),q=S.search.trim().toLowerCase();
-  const myTurn=!done()&&teamOfStep(S.step)==="P", act=done()?"P":ORDER[S.step].act;
-  const pickedBy={};ORDER.forEach((o,i)=>{const v=S.draft[i];if(v!=null&&v>=0&&o.act==="P")pickedBy[v]=sideOf(teamOfStep(i))});
+  const myTurn=!done()&&teamOfStep(S.step)==="P", act=done()?"P":ORD()[S.step].act;
+  const pickedBy={};ORD().forEach((o,i)=>{const v=S.draft[i];if(v!=null&&v>=0&&o.act==="P")pickedBy[v]=sideOf(teamOfStep(i))});
   document.querySelectorAll(".hero").forEach(b=>{
     const id=+b.dataset.id,h=HEROES[id];
     const match=(!q||h.name.toLowerCase().includes(q)||h.ab.toLowerCase().includes(q))&&(!S.filterPos||h.pos.includes(S.filterPos));
@@ -987,8 +1069,8 @@ function renderDetail(){
   if(id==null){
     el.innerHTML=`<h4>Герой</h4><p class="muted" style="margin:0">Нажми на героя. На пике видно, как он впишется в твой драфт; на бане — насколько он усилил бы соперника. Двойной клик или Enter подтверждает выбор.</p>`;return}
   const h=HEROES[id], un=unavailable().has(id);
-  const myTurn=!!myAct(), act=done()?"P":ORDER[S.step].act, forOpp=MAN()&&!done()&&teamOfStep(S.step)==="A";
-  const actor = done()?"P":teamOfStep(S.step);
+  const myTurn=!!myAct(), act=done()?"P":ORD()[S.step].act, forOpp=MAN()&&!done()&&teamOfStep(S.step)==="A";
+  const actor = done()?"P":evalTeamOf(teamOfStep(S.step));
   const banView = !done() && act==="B";
   const persp = banView ? other(actor) : actor;          // бан: смотрим, что герой дал бы тому, кому его баним
   const me=picks(persp),en=picks(other(persp));
@@ -1022,7 +1104,7 @@ function renderHints(){
   if(!S.hints){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Выключены. Включи галочку «Подсказки» сверху, чтобы видеть лучшие варианты по позициям.</p>`;return}
   if(done()){el.hidden=true;el.style.display="none";return}
   el.hidden=false; el.style.display="";
-  const team=teamOfStep(S.step),act=ORDER[S.step].act;
+  const team=evalTeamOf(teamOfStep(S.step)),act=ORD()[S.step].act;
   if(team!=="P"&&!MAN()){el.innerHTML=`<h4>Подсказки</h4><p class="muted" style="margin:0">Появятся на твоём ходу.</p>`;return}
   const roleTeam = act==="P" ? team : other(team);       // пик — смотрим свои роли, бан — роли того, кому баним
   const hasPicks = picks(roleTeam).length>0;
@@ -1035,7 +1117,13 @@ function renderHints(){
     ? `Баним по позициям ${whoRole}: оценка показывает, насколько герой усилил бы их драфт.`
     : `Берём по свободным позициям ${whoRole}: оценка показывает, насколько герой усилит драфт.`;
   const groups={}; open.forEach(p=>groups[p]=[]);
-  scoreAll(team,act).forEach(x=>{
+  const scored=scoreAll(team,act), usedIds=new Set();
+  const poolMode = USE.pool && team==="P" && act==="P" && TEAM.players.some(p=>p.heroes.length);
+  if(poolMode) scored.forEach(x=>poolOwners(x.id).forEach(o=>{
+    const g=groups[o.pos]; if(g&&g.length<5&&!g.some(y=>y.id===x.id)){ g.push({...x,moved:[],pool:o.nick}); usedIds.add(x.id) }
+  }));
+  scored.forEach(x=>{
+    if(usedIds.has(x.id)) return;
     const h=HEROES[x.id];
     let p, moved=[];
     if(hasPicks){ const ri=roleInfo(x.id,roleTeam); p=ri.pos; moved=ri.moved; }
@@ -1044,9 +1132,10 @@ function renderHints(){
   });
   const col=p=>`<div class="pcol"><h5><span>Поз. <b>${p}</b> · ${POSNAME[p]}</span></h5>${
     groups[p].length?groups[p].map(x=>{const why=shortReason(x.id,team,act)+(x.moved.length?" · "+x.moved.join(", "):"");
-      return `<button class="prow" data-id="${x.id}" title="${esc(HEROES[x.id].name+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
+      return `<button class="prow${x.pool?" pool":""}" data-id="${x.id}" title="${esc(HEROES[x.id].name+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
     :'<span class="muted">нет подходящих</span>'}</div>`;
   el.innerHTML=`<div class="hints-head"><h4>${title}</h4><span class="muted" style="font-size:13px">${team==="A"?"Прогноз по модели — поставь фактический "+(act==="B"?"бан":"пик")+" соперника. ":""}${expl}${hasPicks?" Свободные позиции: <b style=\"color:var(--fg)\">"+(open.join(", ")||"—")+"</b>.":""}</span></div>
+    ${poolMode?'<div class="muted" style="font-size:12px">Жёлтая полоса — герой из пула команды, он идёт первым в колонке своего игрока.</div>':""}
     <div class="pcols">${open.map(col).join("")}</div>`;
   el.querySelectorAll(".prow").forEach(b=>{
     b.onclick=()=>{S.sel=+b.dataset.id;renderPool();renderDetail()};
@@ -1057,7 +1146,7 @@ function renderHints(){
 function renderLog(){ $("#log").innerHTML=logHTML(); const el=$("#log"); el.scrollTop=el.scrollHeight; }
 function logHTML(){
   return S.log.length?S.log.map(e=>{
-    const who=e.team==="P"?L().me:L().opp, what=e.act==="B"?"бан":"пик", name=e.id<0?"пропуск":HEROES[e.id].name;
+    const who=e.team==="N"?"Общий":e.team==="P"?L().me:L().opp, what=e.act==="B"?"бан":"пик", name=e.id<0?"пропуск":HEROES[e.id].name;
     const g=e.g?`<span class="grade ${e.g.cls}" title="${e.g.best!=null?"Лучший вариант по модели: "+esc(HEROES[e.g.best].name):""}">#${e.g.rank} ${e.g.txt}</span>`:"";
     return `<div class="l"><span class="n">${e.i+1}</span><span>${who} · ${what}: <b>${esc(name)}</b></span>${g}</div>`}).join(""):`<span class="muted">Пока пусто</span>`;
 }
@@ -1115,19 +1204,28 @@ function histLoad(){try{const v=JSON.parse(localStorage.getItem(HKEY));return Ar
 function histSave(list){try{localStorage.setItem(HKEY,JSON.stringify(list.slice(0,HMAX)))}catch(e){}}
 function recordFromState(){
   return {v:1,id:S.draftId,t:Date.now(),mode:MODE,side:S.playerSide,first:S.playerFirst,diff:S.diff,
+    order: AP()?S.order.slice(AP_BANS).map(o=>o.side).join(""):undefined,
+    tok: Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,"0")).join(""), res:null,
     draft:S.draft.slice(),name:"",
     log:S.log.map(e=>({i:e.i,team:e.team,act:e.act,id:e.id,r:e.g?e.g.rank:null,b:e.g?e.g.best:null}))};
 }
 function histUpsert(rec){
   const l=histLoad(), k=l.findIndex(x=>x.id===rec.id);
-  if(k>=0){rec.name=l[k].name;rec.t=l[k].t;l[k]=rec} else l.unshift(rec);
+  if(k>=0){rec.name=l[k].name;rec.t=l[k].t;rec.tok=l[k].tok||rec.tok;rec.res=l[k].res??null;l[k]=rec} else l.unshift(rec);
   histSave(l);
 }
-function validRecord(r){return r&&typeof r.id==="string"&&Array.isArray(r.draft)&&r.draft.length===24&&r.draft.every(x=>x===null||(Number.isInteger(x)&&x>=-1&&x<N))&&(r.mode==="ai"||r.mode==="manual")}
+function validRecord(r){
+  if(!r||typeof r.id!=="string"||!Array.isArray(r.draft)||!["ai","manual","allpick"].includes(r.mode)) return false;
+  if(r.draft.length!==(r.mode==="allpick"?AP_BANS+10:24)) return false;
+  if(r.mode==="allpick"&&!(typeof r.order==="string"&&r.order.length===10&&/^[FS]+$/.test(r.order))) return false;
+  return r.draft.every(x=>x===null||(Number.isInteger(x)&&x>=-1&&x<N));
+}
+const orderFromStr=str=>[...Array(AP_BANS).fill({side:"N",act:"B"}),...str.split("").map(c=>({side:c,act:"P"}))];
 function stateFromRecord(r){
   const st=makeState();
   st.playerSide=r.side==="dire"?"dire":"rad"; st.playerFirst=!!r.first; st.diff=r.diff||"normal";
-  st.draft=r.draft.slice(); st.step=24; st.draftId=r.id;
+  st.order=r.mode==="allpick"?orderFromStr(r.order):null;
+  st.draft=r.draft.slice(); st.step=r.draft.length; st.draftId=r.id;
   st.log=(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:e.id,g:e.r?{rank:e.r,best:e.b??null,cls:e.r<=3?"g-a":e.r<=10?"g-b":"g-c",txt:e.r<=3?"отлично":e.r<=10?"неплохо":"можно лучше"}:null}));
   return st;
 }
@@ -1135,7 +1233,8 @@ function withRecord(r,fn){const sm=MODE,ss=S;MODE=r.mode;S=stateFromRecord(r);tr
 function teamPicksOf(r,team){return withRecord(r,()=>{const ids=picks(team),m=bestAssign(ids).map;return ids.map((id,k)=>[m[k],id]).sort((a,b)=>a[0]-b[0]).map(x=>x[1])})}
 function fiveHTML(ids,side){return `<div class="five ${side}">${ids.map(id=>IMG_OK?`<img src="${HEROES[id].img}" alt="${esc(HEROES[id].name)}" title="${esc(HEROES[id].name)}" loading="lazy" onerror="imgFail(this)">`:`<span class="ph" title="${esc(HEROES[id].name)}">${esc(HEROES[id].ab)}</span>`).join("")}</div>`}
 const fmtDate=t=>new Date(t).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-const modeName=m=>m==="manual"?"Турнир":"Тренировка";
+const modeName=m=>m==="manual"?"Турнир":m==="allpick"?"All Pick":"Тренировка";
+const MODE_HINT={ai:"драфт против компьютера",manual:"Captains Mode: все баны и пики ставите вы — за себя и за соперника",allpick:"All Pick: баны и пики обеих команд по раундам ставите вы"};
 
 /* ===== ОБЩАЯ БАЗА (Supabase) =====
    Заполняется после создания проекта: адрес проекта и публичный (anon / publishable) ключ.
@@ -1147,11 +1246,11 @@ const getNick=()=>{try{return localStorage.getItem(NICK_KEY)||""}catch(e){return
 let HREMOTE=null, HREMOTE_ERR="", HSRC="all";
 const idToName=x=>x==null?null:x<0?"-":HEROES[x].name;
 const nameToId=n=>n==null?null:n==="-"?-1:(BYNAME[n]??null);
-function toDb(r){return {id:r.id,created_at:new Date(r.t).toISOString(),mode:r.mode,side:r.side,first_pick:!!r.first,
+function toDb(r){return {id:r.id,created_at:new Date(r.t).toISOString(),mode:r.mode,side:r.side,first_pick:!!r.first,order_sides:r.order||null,edit_token:r.tok||null,
   draft:r.draft.map(idToName),log:(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,h:idToName(e.id),r:e.r,b:idToName(e.b)})),author:getNick().slice(0,32)||null}}
 function fromDb(x){
   const draft=(x.draft||[]).map(nameToId);
-  return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:x.first_pick,draft,name:"",author:x.author||"",remote:true,
+  return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:x.first_pick,order:x.order_sides||undefined,res:x.result||null,draft,name:"",author:x.author||"",remote:true,
     log:(x.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:nameToId(e.h),r:e.r,b:nameToId(e.b)}))};
 }
 // новые ключи (sb_publishable_…) передаются только в заголовке apikey; старый anon-ключ (JWT) работает так же
@@ -1164,7 +1263,7 @@ async function dbFetch(){
   if(!dbOn()) return;
   HREMOTE_ERR="";
   try{
-    const r=await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts?select=*&order=created_at.desc&limit=500",{headers:dbHeaders()});
+    const r=await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts?select=id,created_at,mode,side,first_pick,order_sides,draft,log,author,result&order=created_at.desc&limit=500",{headers:dbHeaders()});
     if(!r.ok) throw new Error("ошибка базы "+r.status);
     HREMOTE=(await r.json()).map(fromDb).filter(validRecord);
   }catch(e){HREMOTE_ERR=e.message||"нет связи с базой"}
@@ -1173,14 +1272,53 @@ async function dbFetch(){
 function historySource(){
   const local=histLoad();
   if(!dbOn()||HREMOTE==null) return local;
-  if(HSRC==="mine"){const ids=new Set(local.map(r=>r.id));return HREMOTE.filter(r=>ids.has(r.id))}
-  return HREMOTE;
+  const loc=Object.fromEntries(local.map(r=>[r.id,r]));
+  const merged=HREMOTE.map(r=>loc[r.id]&&loc[r.id].res&&!r.res?{...r,res:loc[r.id].res}:r);
+  if(HSRC==="mine") return merged.filter(r=>loc[r.id]);
+  return merged;
+}
+
+async function setResult(id,res){
+  const l=histLoad(), k=l.findIndex(x=>x.id===id); let tok=null;
+  if(k>=0){ l[k].res=res; tok=l[k].tok; histSave(l); }
+  if(HREMOTE){ const x=HREMOTE.find(r=>r.id===id); if(x) x.res=res; }
+  RES_MSG="";
+  if(dbOn()&&tok){
+    try{ const r=await rpc("set_draft_result",{p_id:id,p_token:tok,p_result:res}); if(!r.ok) RES_MSG="в базе не сохранилось ("+r.status+"), но сохранено в этом браузере"; else { const ok=await r.json(); if(ok===false) RES_MSG="этого драфта нет в базе — результат сохранён только в этом браузере"; } }
+    catch(e){ RES_MSG="нет связи с базой — результат сохранён в этом браузере" }
+  }
+  renderHistory();
+}
+let RES_MSG="";
+const canSetResult=r=>{const loc=histLoad().find(x=>x.id===r.id);return !!loc};
+function resultsHTML(list){
+  const played=list.filter(r=>r.mode!=="ai"&&(r.res==="win"||r.res==="loss"));
+  if(!played.length) return `<div class="card"><h4>Реальные результаты</h4><p class="muted" style="margin:0">Отмечай «Победа» или «Поражение» на странице разбора драфта из «Турнира» или «All Pick». Здесь появится реальный винрейт, точность прогноза модели и герои, на которых вы реально выигрываете.</p></div>`;
+  const wins=played.filter(r=>r.res==="win").length;
+  const pr=played.map(r=>({p:withRecord(r,()=>winProb()),w:r.res==="win"}));
+  const hit=pr.filter(x=>(x.p>=0.5)===x.w).length;
+  const fav=pr.filter(x=>x.p>=0.5), dog=pr.filter(x=>x.p<0.5);
+  const wr=a=>a.length?Math.round(a.filter(x=>x.w).length/a.length*100)+"% ("+a.length+")":"—";
+  const hm={};
+  played.forEach(r=>teamPicksOf(r,"P").forEach(id=>{const x=hm[id]||(hm[id]={g:0,w:0});x.g++;if(r.res==="win")x.w++}));
+  const heroes=Object.entries(hm).sort((a,b)=>b[1].g-a[1].g||b[1].w-a[1].w).slice(0,10);
+  return `<div class="card"><h4>Реальные результаты</h4>
+    <div class="kpis">
+      <div class="kpi"><b><span class="res-w">${wins}</span>–<span class="res-l">${played.length-wins}</span></b><span>победы – поражения</span></div>
+      <div class="kpi"><b>${Math.round(wins/played.length*100)}%</b><span>реальный винрейт</span></div>
+      <div class="kpi"><b>${Math.round(hit/played.length*100)}%</b><span>прогноз модели угадал</span></div>
+      <div class="kpi"><b>${wr(fav)}</b><span>винрейт, когда модель за нас</span></div>
+      <div class="kpi"><b>${wr(dog)}</b><span>винрейт, когда модель против</span></div>
+    </div>
+    <div class="sub">Наши герои в сыгранных матчах</div>
+    ${heroes.map(([id,x])=>`<div class="stat-row">${IMG(HEROES[id],"pimg")}<span style="min-width:120px">${esc(HEROES[id].name)}</span><span class="bar"><i style="width:${x.w/x.g*100}%;background:var(--good)"></i></span><b>${x.w}–${x.g-x.w}</b></div>`).join("")}
+  </div>`;
 }
 
 function statsHTML(list){
   if(!list.length) return "";
   const cnt=(fn)=>{const m={};list.forEach(r=>fn(r).forEach(id=>{m[id]=(m[id]||0)+1}));return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,8)};
-  const by=(team,act)=>r=>withRecord(r,()=>ORDER.map((o,i)=>o.act===act&&teamOfStep(i)===team?S.draft[i]:null).filter(x=>x!=null&&x>=0));
+  const by=(team,act)=>r=>withRecord(r,()=>ORD().map((o,i)=>o.act===act&&teamOfStep(i)===team?S.draft[i]:null).filter(x=>x!=null&&x>=0));
   const block=(title,rows)=>{const mx=rows.length?rows[0][1]:1;return `<div class="card"><h4>${title}</h4>${rows.length?rows.map(([id,c])=>`<div class="stat-row">${IMG(HEROES[id],"pimg")}<span style="min-width:110px">${esc(HEROES[id].name)}</span><span class="bar"><i style="width:${c/mx*100}%"></i></span><b>${c}</b></div>`).join(""):'<span class="muted">—</span>'}</div>`};
   const probs=list.map(r=>withRecord(r,()=>winProb()));
   const avgP=probs.reduce((a,b)=>a+b,0)/probs.length;
@@ -1192,6 +1330,7 @@ function statsHTML(list){
       <div class="kpi"><b>${probs.filter(p=>p>=0.5).length}</b><span>драфтов с перевесом</span></div>
       <div class="kpi"><b>${avgR?avgR.toFixed(1):"—"}</b><span>средний ранг наших ходов</span></div>
     </div></div>
+    ${resultsHTML(list)}
     <div class="stats">${block("Мы чаще всего берём",cnt(by("P","P")))}${block("Мы чаще всего баним",cnt(by("P","B")))}${block("Против нас берут",cnt(by("A","P")))}${block("Против нас банят",cnt(by("A","B")))}</div>`;
 }
 
@@ -1200,11 +1339,11 @@ function historyListHTML(){
   const items=list.map(r=>{
     const our=teamPicksOf(r,"P"), their=teamPicksOf(r,"A"), pr=withRecord(r,()=>winProb());
     const ourSide=r.side==="dire"?"dire":"rad", thSide=ourSide==="rad"?"dire":"rad";
-    return `<button class="hitem" data-hid="${esc(r.id)}"><span><span class="ttl">${esc(r.name||"Драфт "+fmtDate(r.t))}</span><br><span class="when">${fmtDate(r.t)} · <span class="badge">${modeName(r.mode)}</span>${r.author?" · "+esc(r.author):""}</span></span>${fiveHTML(our,ourSide)}${fiveHTML(their,thSide)}<span class="prob ${pr>=0.5?"pos":"neg"}">${(pr*100).toFixed(0)}%</span></button>`;
+    return `<button class="hitem" data-hid="${esc(r.id)}"><span><span class="ttl">${esc(r.name||"Драфт "+fmtDate(r.t))}</span><br><span class="when">${fmtDate(r.t)} · <span class="badge">${modeName(r.mode)}</span>${r.author?" · "+esc(r.author):""}</span></span>${fiveHTML(our,ourSide)}${fiveHTML(their,thSide)}<span class="prob ${pr>=0.5?"pos":"neg"}">${(pr*100).toFixed(0)}%${r.res?`<br><span class="badge ${r.res}">${r.res==="win"?"победа":"поражение"}</span>`:""}</span></button>`;
   }).join("");
   return `<div class="hist-head"><h2>История драфтов</h2>
       ${dbOn()?`<select id="hSrc" aria-label="Чьи драфты"><option value="all">Все посетители</option><option value="mine">Только мои</option></select>`:""}
-      <select id="hFilter" aria-label="Фильтр"><option value="all">Все режимы</option><option value="ai">Тренировка</option><option value="manual">Турнир</option></select>
+      <select id="hFilter" aria-label="Фильтр"><option value="all">Все режимы</option><option value="ai">Тренировка</option><option value="manual">Турнир</option><option value="allpick">All Pick</option></select>
       ${dbOn()?`<input id="hNick" maxlength="32" placeholder="Твой ник для истории" value="${esc(getNick())}" style="background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 10px;width:180px">`:""}
     </div>
     <p class="note" style="margin:0">${dbOn()
@@ -1213,12 +1352,12 @@ function historyListHTML(){
     ${dbOn()&&HREMOTE==null&&!HREMOTE_ERR?'<div class="muted">Загружаю общую историю…</div>':""}
     ${HREMOTE_ERR?`<div class="neg" style="font-size:13px">Общая база недоступна (${esc(HREMOTE_ERR)}), показываю драфты из этого браузера.</div>`:""}
     ${statsHTML(list)}
-    <div class="hlist">${items||'<div class="card"><p class="muted" style="margin:0">Пока нет законченных драфтов. Доиграй драфт до 24-го хода в «Тренировке» или «Турнире», и он появится здесь.</p></div>'}</div>`;
+    <div class="hlist">${items||'<div class="card"><p class="muted" style="margin:0">Пока нет законченных драфтов. Доведи драфт до конца в «Тренировке», «Турнире» или «All Pick», и он появится здесь.</p></div>'}</div>`;
 }
 
 function historyDetailHTML(r){
   return withRecord(r,()=>{
-    const ourSide=sideOf("P"), bansOf=t=>ORDER.map((o,i)=>o.act==="B"&&teamOfStep(i)===t?S.draft[i]:null).filter(x=>x!=null);
+    const ourSide=sideOf("P"), bansOf=t=>ORD().map((o,i)=>o.act==="B"&&teamOfStep(i)===t?S.draft[i]:null).filter(x=>x!=null);
     const bansHTML=ids=>`<div class="bans-row">${ids.map(id=>id<0?`<span class="b">пропуск</span>`:`<span class="b" title="${esc(HEROES[id].name)}">${IMG(HEROES[id])}${IMG_OK?"":esc(HEROES[id].ab)}</span>`).join("")}</div>`;
     const P=teamScore("P"),A=teamScore("A"),pr=winProb();
     const ours=S.log.filter(e=>e.team==="P"&&e.g);
@@ -1227,12 +1366,12 @@ function historyDetailHTML(r){
     return `<div class="hist-head"><button class="btn" id="hBack">← К списку</button><h2 style="margin-left:4px">Разбор драфта</h2></div>
     <div class="card hdet">
       <div class="hdet-top">${r.remote?`<span style="font-weight:600;font-size:16px;margin-right:auto">${esc(r.author?"Драфт: "+r.author:"Драфт")}</span>`:`<input id="hName" maxlength="80" value="${esc(r.name||"")}" placeholder="Название, например «Финал против Team X»">`}
-        <span class="badge">${modeName(r.mode)}</span><span class="muted">${fmtDate(r.t)} · мы ${ourSide==="rad"?"Radiant":"Dire"}, ${S.playerFirst?"первый пик":"второй пик"}</span></div>
+        <span class="badge">${modeName(r.mode)}</span><span class="muted">${fmtDate(r.t)} · мы ${ourSide==="rad"?"Radiant":"Dire"}${AP()?"":", "+(S.playerFirst?"первый пик":"второй пик")}</span></div>
       <div class="timeline">${timelineHTML()}</div>
-      <div class="ateams">
+      ${AP()?`<div class="card"><h4>Баны</h4>${bansHTML(bansOf("N"))}</div>`:`<div class="ateams">
         <div class="card"><h4>Наши баны</h4>${bansHTML(bansOf("P"))}</div>
         <div class="card"><h4>Баны соперника</h4>${bansHTML(bansOf("A"))}</div>
-      </div>
+      </div>`}
     </div>
     <div class="card"><h4>Показатели</h4>
       <div class="kpis">
@@ -1248,6 +1387,15 @@ function historyDetailHTML(r){
     </div>
     ${analysisHTML()}
     <div class="card"><h4>Ход драфта</h4><div class="log" style="max-height:none">${logHTML()}</div></div>
+    ${r.mode!=="ai"?`<div class="card"><h4>Результат матча</h4>
+      ${canSetResult(r)?`<div class="actions">
+        <button class="btn${r.res==="win"?" primary":""}" data-res="win">Победа</button>
+        <button class="btn${r.res==="loss"?" primary":""}" data-res="loss">Поражение</button>
+        ${r.res?`<button class="btn" data-res="">Сбросить</button>`:""}
+        <span class="muted" style="font-size:13px">${r.res?(r.res==="win"?"Отмечено: победа":"Отмечено: поражение"):"Не отмечено"}</span></div>
+        ${RES_MSG?`<div class="neg" style="font-size:13px">${esc(RES_MSG)}</div>`:""}`
+      :`<p class="muted" style="margin:0">${r.res?(r.res==="win"?"Победа":"Поражение")+". ":""}Результат может отметить только тот, кто сохранил этот драфт.</p>`}
+    </div>`:""}
     ${r.remote?"":`<div class="card"><div class="actions"><button class="btn" id="hDelete">${HDEL?"Точно удалить? Нажми ещё раз":"Удалить из истории"}</button></div></div>`}`;
   });
 }
@@ -1265,22 +1413,182 @@ function renderHistory(){
   } else {
     $("#hBack").onclick=()=>{HSEL=null;HDEL=false;renderHistory()};
     if($("#hName")) $("#hName").onchange=e=>{const l=histLoad(),k=l.findIndex(x=>x.id===r.id);if(k>=0){l[k].name=e.target.value.trim().slice(0,80);histSave(l)}};
+    v.querySelectorAll("[data-res]").forEach(b=>b.onclick=()=>setResult(r.id,b.dataset.res||null));
     if($("#hDelete")) $("#hDelete").onclick=()=>{ if(!HDEL){HDEL=true;renderHistory();return} histSave(histLoad().filter(x=>x.id!==r.id)); HSEL=null; HDEL=false; renderHistory(); };
   }
 }
 function showView(v){
   VIEW=v;
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===v));
-  const hv=$("#historyView"), isH=v==="history";
-  document.body.classList.toggle("view-history",isH);
-  hv.hidden=!isH; hv.style.display=isH?"":"none";
-  if(isH){
+  const pages={history:$("#historyView"),prep:$("#prepView")}, isPage=!!pages[v];
+  document.body.classList.toggle("view-page",isPage);
+  Object.entries(pages).forEach(([k,el])=>{const on=k===v;el.hidden=!on;el.style.display=on?"":"none"});
+  if(isPage){
     clearTimeout(STATES.ai.aiTimer);
-    $("#navHint").textContent=dbOn()?"общая история драфтов всех посетителей":"законченные драфты и их разбор";
-    renderHistory(); dbFetch();
+    if(v==="history"){ $("#navHint").textContent=dbOn()?"общая история драфтов всех посетителей":"законченные драфты и их разбор"; renderHistory(); dbFetch(); }
+    else { $("#navHint").textContent="пул нашей команды и разведка соперника"; renderPrep(); }
   } else {
-    if(v!==MODE) setMode(v); else { $("#navHint").textContent=v==="manual"?"все баны и пики ставите вы — за себя и за соперника":"драфт против компьютера"; render(); scheduleAI(); }
+    if(v!==MODE) setMode(v); else { $("#navHint").textContent=MODE_HINT[v]; render(); scheduleAI(); }
   }
+}
+
+/* ===== ПОДГОТОВКА: игроки из OpenDota ===== */
+function parseAcc(raw){
+  const s=(raw||"").trim(); if(!s) return null;
+  let m=s.match(/(?:opendota\.com|dotabuff\.com|stratz\.com)\/players\/(\d+)/i); if(m) return m[1];
+  m=s.match(/steamcommunity\.com\/profiles\/(\d{17})/i); if(m) return (BigInt(m[1])-76561197960265728n).toString();
+  if(/steamcommunity\.com\/id\//i.test(s)) return "vanity";
+  if(/^\d{17}$/.test(s)) return (BigInt(s)-76561197960265728n).toString();
+  if(/^\d{1,10}$/.test(s)) return s;
+  return null;
+}
+async function fetchPlayer(raw){
+  const acc=parseAcc(raw);
+  if(acc==="vanity") throw new Error("ссылка вида steamcommunity.com/id/… не подходит — нужен числовой ID: открой профиль на opendota.com или dotabuff.com и скопируй ссылку оттуда");
+  if(!acc) throw new Error("не похоже на Steam ID или ссылку на профиль");
+  if(DATA.status!=="ok") await loadHeroStats(false);
+  if(DATA.status!=="ok") throw new Error("нет связи с OpenDota");
+  const [pr,hr]=await Promise.all([fetch(`${OD}/players/${acc}`),fetch(`${OD}/players/${acc}/heroes?date=180`)]);
+  if(!pr.ok||!hr.ok) throw new Error("OpenDota ответила ошибкой "+(pr.ok?hr.status:pr.status));
+  const prof=await pr.json(), list=await hr.json();
+  const heroes=list.filter(x=>x.games>0&&DATA.odId[x.hero_id]!=null).map(x=>({h:HEROES[DATA.odId[x.hero_id]].name,g:x.games,w:x.win})).sort((a,b)=>b.g-a.g);
+  const name=(prof.profile&&prof.profile.personaname)||"";
+  if(!heroes.length) throw new Error(prof.profile?"за 180 дней нет игр в открытой статистике — в Dota включи «Открыть общедоступные данные матчей»":"профиль не найден в OpenDota");
+  return {acc,name,heroes,at:Date.now()};
+}
+
+/* ===== ПОДГОТОВКА: синхронизация команды через базу ===== */
+const rpc=(fn,body)=>fetch(DB.url.replace(/\/$/,"")+"/rest/v1/rpc/"+fn,{method:"POST",headers:dbHeaders(),body:JSON.stringify(body)});
+let TEAM_SYNC="";
+async function teamRemoteSave(){
+  if(!TEAM.code||!dbOn()) return;
+  try{ const r=await rpc("save_team",{p_code:TEAM.code,p_data:TEAM}); TEAM_SYNC=r.ok?"сохранено в базе":"база не сохранила ("+r.status+")"; }
+  catch(e){ TEAM_SYNC="нет связи с базой"; }
+  const el=$("#teamSync"); if(el) el.textContent=TEAM_SYNC;
+}
+async function teamRemoteLoad(code){
+  const r=await rpc("get_team",{p_code:code});
+  if(!r.ok) throw new Error("ошибка базы "+r.status);
+  const d=await r.json(); return d&&Array.isArray(d.players)?d:null;
+}
+const newTeamCode=()=>Array.from(crypto.getRandomValues(new Uint8Array(9)),b=>"abcdefghjkmnpqrstuvwxyz23456789"[b%31]).join("").replace(/(.{3})(?=.)/g,"$1-");
+
+/* ===== ПОДГОТОВКА: отрисовка ===== */
+let PREP_MSG={};
+const heroNameOptions=()=>HEROES.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(h=>`<option value="${esc(h.name)}">`).join("");
+function chipHTML(name,st,del){
+  const id=BYNAME[name]; if(id==null) return "";
+  const h=HEROES[id];
+  return `<span class="hchip" title="${esc(name)}">${IMG(h)}${esc(h.ab)}${st?`<span class="gw">${st.g}·${Math.round(st.w/st.g*100)}%</span>`:""}${del?`<button data-del="${esc(del)}" aria-label="Убрать">×</button>`:""}</span>`;
+}
+function banTargetsVsUs(){
+  const rows=[];
+  TEAM.players.forEach(p=>p.heroes.forEach(n=>{const id=BYNAME[n]; if(id==null) return;
+    const st=p.stats&&p.stats[n]; rows.push({id,nick:p.nick||"поз. "+p.pos,v:HEROES[id].meta*0.9+0.8+(st?comfortScore(st.g,st.w)*0.6:0)})}));
+  return rows.sort((a,b)=>b.v-a.v).slice(0,8);
+}
+function banTargetsVsThem(o){
+  const m={};
+  o.players.forEach(p=>(p.heroes||[]).forEach(x=>{const id=BYNAME[x.h]; if(id==null) return;
+    (m[id]=m[id]||{id,c:0,who:[]}); m[id].c+=comfortScore(x.g,x.w); m[id].who.push(`${p.name||p.acc} ${x.g}`)}));
+  return Object.values(m).map(x=>({...x,v:Math.min(2.5,x.c)+HEROES[x.id].meta*0.5})).sort((a,b)=>b.v-a.v).slice(0,10);
+}
+function renderPrep(){
+  const v=$("#prepView"), o=activeOpp();
+  const playerRow=(p,k)=>`<div class="player" data-k="${k}">
+      <div class="prow-in">
+        <input data-f="nick" value="${esc(p.nick)}" placeholder="Ник" style="width:130px">
+        <select data-f="pos">${[1,2,3,4,5].map(x=>`<option value="${x}"${+p.pos===x?" selected":""}>Поз. ${x} · ${POSNAME[x]}</option>`).join("")}</select>
+        <input data-f="acc" value="${esc(p.acc)}" placeholder="Steam ID или ссылка на opendota/dotabuff" style="flex:1 1 200px">
+        <button class="btn" data-act="pull">Подтянуть героев</button>
+      </div>
+      <div class="chips">${p.heroes.map(n=>chipHTML(n,p.stats&&p.stats[n],n)).join("")||'<span class="muted" style="font-size:12px">Герои не добавлены</span>'}</div>
+      <div class="prow-in"><input data-f="add" list="heroNames" placeholder="Добавить героя" style="width:200px"><span class="muted" style="font-size:12px">${esc(PREP_MSG["p"+k]||"")}</span></div>
+    </div>`;
+  const oppPlayer=(p,k)=>`<div class="player" data-ok="${k}">
+      <div class="prow-in"><input data-of="acc" value="${esc(p.acc||"")}" placeholder="Steam ID или ссылка игрока ${k+1}" style="flex:1 1 220px">
+        <span style="font-weight:600">${esc(p.name||"")}</span><span class="muted" style="font-size:12px">${esc(PREP_MSG["o"+k]||"")}</span></div>
+      ${(p.heroes||[]).length?`<div class="chips">${p.heroes.slice(0,8).map(x=>chipHTML(x.h,{g:x.g,w:x.w})).join("")}</div>`:""}
+    </div>`;
+  const vsUs=banTargetsVsUs(), vsThem=o?banTargetsVsThem(o):[];
+  const list=(rows,fn)=>rows.length?rows.map(r=>`<div class="stat-row">${IMG(HEROES[r.id],"pimg")}<span style="min-width:120px">${esc(HEROES[r.id].name)}</span><span class="muted" style="font-size:12px;flex:1">${esc(fn(r))}</span></div>`).join(""):'<span class="muted">—</span>';
+  v.innerHTML=`<datalist id="heroNames">${heroNameOptions()}</datalist>
+  <div class="hist-head"><h2>Подготовка</h2></div>
+  <div class="prep-grid prep">
+    <div class="card">
+      <h4>Наша команда</h4>
+      <div class="prow-in"><input id="teamName" value="${esc(TEAM.name)}" placeholder="Название команды" style="flex:1 1 200px"></div>
+      <div class="prow-in">
+        <span class="muted" style="font-size:13px">Код команды:</span>
+        <input id="teamCode" value="${esc(TEAM.code)}" placeholder="нет кода" style="width:150px;font-family:var(--f-mono)">
+        ${TEAM.code?`<button class="btn" id="teamLoad">Загрузить по коду</button>`:`<button class="btn" id="teamNewCode"${dbOn()?"":" disabled"}>Создать код</button><button class="btn" id="teamLoad">Подключиться по коду</button>`}
+        <span class="muted" id="teamSync" style="font-size:12px">${esc(TEAM_SYNC)}</span>
+      </div>
+      <p class="muted" style="margin:0;font-size:12px">По коду команда хранится в общей базе: друг вводит тот же код и видит тот же пул. Код знаете только вы.</p>
+      ${TEAM.players.map(playerRow).join("")}
+      <p class="note" style="margin:0">«Подтянуть героев» берёт из OpenDota героев игрока за последние 180 дней (больше 3 игр). В профиле Dota должна быть включена настройка «Открыть общедоступные данные матчей». Лишних можно убрать крестиком, нужных добавить вручную.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="card">
+        <h4>Соперник</h4>
+        <div class="prow-in">
+          <select id="oppSel"><option value="">— выбери соперника —</option>${TEAM.opps.map(x=>`<option value="${esc(x.id)}"${x.id===TEAM.activeOpp?" selected":""}>${esc(x.name||"Без названия")}</option>`).join("")}</select>
+          <button class="btn" id="oppNew">Новый соперник</button>
+          ${o?`<button class="btn" id="oppDel">${PREP_MSG.oppDel?"Точно удалить?":"Удалить"}</button>`:""}
+        </div>
+        ${o?`<div class="prow-in"><input id="oppName" value="${esc(o.name)}" placeholder="Название команды соперника" style="flex:1 1 220px"><button class="btn primary" id="oppLoad">Загрузить статистику</button></div>
+          ${o.players.map(oppPlayer).join("")}`:'<p class="muted" style="margin:0">Создай соперника и вставь Steam-профили его игроков: тренажёр соберёт, на ком они играют, и подскажет баны.</p>'}
+      </div>
+      ${o?`<div class="card"><h4>Что банить против «${esc(o.name||"соперника")}»</h4>${list(vsThem,r=>"играют: "+r.who.join(", "))}<p class="muted" style="margin:0;font-size:12px">Учитывается, сколько игр и с каким винрейтом на герое у каждого игрока, плюс текущая мета. Во время драфта с галочкой «Разведка» эти герои поднимаются в подсказках по банам.</p></div>`:""}
+      <div class="card"><h4>Что скорее всего забанят против нас</h4>${list(vsUs,r=>r.nick)}<p class="muted" style="margin:0;font-size:12px">Самые сильные герои нашего пула. Держите запасные варианты на эти позиции.</p></div>
+    </div>
+  </div>`;
+  wirePrep();
+}
+function wirePrep(){
+  const v=$("#prepView");
+  $("#teamName").onchange=e=>{TEAM.name=e.target.value.trim().slice(0,60);saveTeam()};
+  const nc=$("#teamNewCode"); if(nc) nc.onclick=()=>{TEAM.code=newTeamCode();saveTeam();teamRemoteSave().then(renderPrep);renderPrep()};
+  $("#teamLoad").onclick=async()=>{
+    const code=$("#teamCode").value.trim(); if(!code){TEAM_SYNC="введи код";renderPrep();return}
+    if(!dbOn()){TEAM_SYNC="общая база не подключена";renderPrep();return}
+    try{ const d=await teamRemoteLoad(code); if(d){TEAM={...d,code};saveTeam(false);TEAM_SYNC="загружено из базы"} else {TEAM.code=code;saveTeam();TEAM_SYNC="команды с таким кодом нет — сохраню текущую под этим кодом"} }
+    catch(e){TEAM_SYNC=e.message}
+    renderPrep(); render();
+  };
+  v.querySelectorAll(".player[data-k]").forEach(row=>{
+    const k=+row.dataset.k, p=TEAM.players[k];
+    row.querySelector('[data-f="nick"]').onchange=e=>{p.nick=e.target.value.trim().slice(0,24);saveTeam()};
+    row.querySelector('[data-f="pos"]').onchange=e=>{p.pos=+e.target.value;saveTeam()};
+    row.querySelector('[data-f="acc"]').onchange=e=>{p.acc=e.target.value.trim();saveTeam()};
+    row.querySelector('[data-f="add"]').onchange=e=>{const n=e.target.value.trim(); if(BYNAME[n]!=null&&!p.heroes.includes(n)){p.heroes.push(n);saveTeam();renderPrep()} else if(n){PREP_MSG["p"+k]="нет такого героя";renderPrep()}};
+    row.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{p.heroes=p.heroes.filter(x=>x!==b.dataset.del);saveTeam();renderPrep()});
+    row.querySelector('[data-act="pull"]').onclick=async()=>{
+      PREP_MSG["p"+k]="загружаю…"; renderPrep();
+      try{ const r=await fetchPlayer(p.acc); const top=r.heroes.filter(x=>x.g>3).slice(0,10);
+        p.stats=p.stats||{}; top.forEach(x=>{p.stats[x.h]={g:x.g,w:x.w}; if(!p.heroes.includes(x.h)) p.heroes.push(x.h)});
+        if(!p.nick&&r.name) p.nick=r.name.slice(0,24);
+        PREP_MSG["p"+k]=`добавлено героев: ${top.length}`; saveTeam(); }
+      catch(e){ PREP_MSG["p"+k]=e.message }
+      renderPrep();
+    };
+  });
+  $("#oppSel").onchange=e=>{TEAM.activeOpp=e.target.value||null;PREP_MSG={};saveTeam();renderPrep()};
+  $("#oppNew").onclick=()=>{const o={id:newDraftId(),name:"",players:[0,1,2,3,4].map(()=>({acc:"",name:"",heroes:[]}))};TEAM.opps.push(o);TEAM.activeOpp=o.id;saveTeam();renderPrep()};
+  const o=activeOpp(); if(!o) return;
+  const od=$("#oppDel"); if(od) od.onclick=()=>{ if(!PREP_MSG.oppDel){PREP_MSG.oppDel=1;renderPrep();return} TEAM.opps=TEAM.opps.filter(x=>x.id!==o.id);TEAM.activeOpp=null;PREP_MSG={};saveTeam();renderPrep() };
+  $("#oppName").onchange=e=>{o.name=e.target.value.trim().slice(0,60);saveTeam();renderPrep()};
+  v.querySelectorAll(".player[data-ok]").forEach(row=>{const k=+row.dataset.ok; row.querySelector('[data-of="acc"]').onchange=e=>{o.players[k].acc=e.target.value.trim();saveTeam()}});
+  $("#oppLoad").onclick=async()=>{
+    v.querySelectorAll(".player[data-ok]").forEach(row=>{o.players[+row.dataset.ok].acc=row.querySelector('[data-of="acc"]').value.trim()});
+    for(let k=0;k<o.players.length;k++){
+      const pl=o.players[k]; if(!pl.acc){PREP_MSG["o"+k]="";continue}
+      PREP_MSG["o"+k]="загружаю…"; renderPrep();
+      try{ const r=await fetchPlayer(pl.acc); pl.name=r.name; pl.heroes=r.heroes.slice(0,15); PREP_MSG["o"+k]=`${r.heroes.length} героев за 180 дней` }
+      catch(e){ PREP_MSG["o"+k]=e.message }
+    }
+    saveTeam(); renderPrep(); render();
+  };
 }
 
 /* ===== EVENTS ===== */
@@ -1291,7 +1599,7 @@ $("#posChips").addEventListener("click",e=>{const c=e.target.closest(".chip");if
 
 /* drag & drop: hero tile -> your pick slots / ban slots / current timeline cell */
 let dragId=null;
-function myAct(){ return (!done()&&(MAN()||teamOfStep(S.step)==="P")) ? ORDER[S.step].act : null }
+function myAct(){ return (!done()&&(MAN()||teamOfStep(S.step)==="P")) ? ORD()[S.step].act : null }
 function markZones(){
   const act=myAct();
   const ct=done()?null:teamOfStep(S.step);
@@ -1337,7 +1645,7 @@ function syncSettings(){
   $("#setTimer").checked=S.timer; $("#setHints").checked=S.hints;
   $("#setDiff").disabled=MAN(); $("#setTimer").disabled=MAN();
   $("#setSide").previousElementSibling.textContent=MAN()?"Наша сторона":"Сторона";
-  $("#setOrder").previousElementSibling.textContent=MAN()?"Мы пикаем":"Очерёдность";
+  $("#setOrder").previousElementSibling.textContent=AP()?"В раунде первыми":MAN()?"Мы пикаем":"Очерёдность";
   $("#search").value=S.search;
 }
 function setMode(m){
@@ -1346,7 +1654,7 @@ function setMode(m){
   MODE=m; S=STATES[m];
   VIEW=m;
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===m));
-  $("#navHint").textContent=m==="manual"?"все баны и пики ставите вы — за себя и за соперника":"драфт против компьютера";
+  $("#navHint").textContent=MODE_HINT[m];
   syncSettings(); render(); scheduleAI();
 }
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.mode));
@@ -1354,6 +1662,9 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.mo
 $("#newBtn").onclick=newDraft;
 $("#undoBtn").onclick=undo;
 $("#setHints").onchange=e=>{S.hints=e.target.checked;render()};
+$("#usePool").checked=USE.pool; $("#useScout").checked=USE.scout;
+$("#usePool").onchange=e=>{USE.pool=e.target.checked;saveUse();render()};
+$("#useScout").onchange=e=>{USE.scout=e.target.checked;saveUse();render()};
 $("#setTimer").onchange=e=>{S.timer=e.target.checked;S.stepLeft=STEP_TIME(S.step);renderTurn()};
 newDraft();
 $("#dataReload").onclick=()=>{loadHeroStats(true);loadStratz(true)};
@@ -1384,6 +1695,7 @@ $("#stratzRemove").onclick=()=>{try{localStorage.removeItem(SZ_KEY);localStorage
   location.reload()};
 loadHeroStats(false);
 loadStratz(false);
+if(TEAM.code&&dbOn()) teamRemoteLoad(TEAM.code).then(d=>{ if(d){TEAM={...d,code:TEAM.code};saveTeam(false);render();if(VIEW==="prep")renderPrep()} }).catch(()=>{});
 renderStratzPanel();
 if(location.hash==="#stratz") toggleStratz(true);
 </script>
