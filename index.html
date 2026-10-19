@@ -56,6 +56,18 @@ body.view-page .settings, body.view-page #timeline, body.view-page .board, body.
 .hchip .gw{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
 .hchip button{background:none;border:0;color:var(--muted);padding:0 2px;font-size:14px;line-height:1}
 .hchip button:hover{color:var(--bad)}
+.tp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tp-head h4{margin:0}
+.tp-row{display:grid;grid-template-columns:minmax(190px,230px) minmax(0,1fr) 150px;gap:8px;align-items:center;border-top:1px solid var(--line);padding:6px 4px}
+.tp-who{display:flex;gap:4px;min-width:0}
+.tp-who select,.tp-who input,.tp-row>input{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 6px;min-width:0;font-size:13px}
+.tp-who select{width:86px;flex:none}.tp-who input{flex:1}
+.pchip .star{color:var(--muted);font-size:13px}
+.pchip .star:hover{color:var(--gold)}
+.pchip.top{border-color:var(--gold)}.pchip.top .star{color:var(--gold)}
+.pchip.gone{opacity:.45}
+.hero.inpool::after{content:"";position:absolute;top:4px;left:4px;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px rgba(0,0,0,.6)}
+@media (max-width:720px){.tp-row{grid-template-columns:minmax(0,1fr)}}
 .prow.pool{box-shadow:inset 3px 0 0 var(--gold)}
 .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:8px}
 .tcard{display:flex;flex-direction:column;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;text-align:left}
@@ -331,6 +343,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
     <div class="center">
       <div class="turn" id="turn"></div>
       <div class="card" id="hintsCard"></div>
+      <div class="card" id="teamPoolCard" hidden style="display:none"></div>
       <div id="analysisWrap" hidden></div>
       <div class="filters">
         <input id="search" type="search" placeholder="Поиск героя (англ. имя или сокращение)" autocomplete="off">
@@ -825,13 +838,14 @@ function backupTeam(reason,t=TEAM){
   try{localStorage.setItem(TEAM_BK_KEY,JSON.stringify(l.slice(0,15)))}catch(e){}
 }
 const activeOpp=()=>TEAM.opps.find(o=>o.id===TEAM.activeOpp)||null;
-function poolOwners(id){const n=HEROES[id].name;return TEAM.players.filter(p=>p.heroes.includes(n)).map(p=>({nick:p.nick||("поз. "+p.pos),pos:+p.pos,st:p.stats&&p.stats[n]}))}
+function poolOwners(id){const n=HEROES[id].name;return TEAM.players.filter(p=>p.heroes.includes(n)).map(p=>({nick:p.nick||("поз. "+p.pos),pos:+p.pos,st:p.stats&&p.stats[n],top:(p.top||[]).includes(n)}))}
 function comfortScore(g,w){ if(!g) return 0; const wr=w/g; return Math.min(1,g/15)*1.2 + Math.max(-0.4,Math.min(0.8,(wr-0.5)*4))*Math.min(1,g/10) }
 function poolBonus(id){
   if(!USE.pool) return {v:0,who:""};
   const o=poolOwners(id); if(!o.length) return {v:0,who:""};
   const best=Math.max(...o.map(x=>x.st?comfortScore(x.st.g,x.st.w):0));
-  return {v:Math.min(2,0.8+best*0.6), who:o.map(x=>x.nick).join(", ")};
+  const top=o.some(x=>x.top);
+  return {v:Math.min(2.4,0.8+best*0.6+(top?0.6:0)), who:o.map(x=>x.nick+(x.top?" ★":"")).join(", ")};
 }
 function scoutInfo(id){
   const o=activeOpp(); if(!o) return {v:0,who:"",list:[]};
@@ -1103,7 +1117,7 @@ function renderPool(){
   document.querySelectorAll(".hero").forEach(b=>{
     const id=+b.dataset.id,h=HEROES[id];
     const match=(!q||h.name.toLowerCase().includes(q)||h.ab.toLowerCase().includes(q))&&(!S.filterPos||h.pos.includes(S.filterPos));
-    b.className="hero"+(b.querySelector("img")?" img":"")+(un.has(id)?" used"+(pickedBy[id]?" p-"+pickedBy[id]:""):"")+(match?"":" dim")+(S.sel===id?" sel":"");
+    b.className="hero"+(b.querySelector("img")?" img":"")+(un.has(id)?" used"+(pickedBy[id]?" p-"+pickedBy[id]:""):"")+(match?"":" dim")+(S.sel===id?" sel":"")+(MAN()&&USE.pool&&inPool(h.name)?" inpool":"");
   });
   document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",+c.dataset.pos===S.filterPos));
 }
@@ -1168,9 +1182,10 @@ function renderHints(){
   const groups={}; open.forEach(p=>groups[p]=[]);
   const scored=scoreAll(team,act), usedIds=new Set();
   const poolMode = USE.pool && team==="P" && act==="P" && TEAM.players.some(p=>p.heroes.length);
-  if(poolMode) scored.forEach(x=>poolOwners(x.id).forEach(o=>{
-    const g=groups[o.pos]; if(g&&g.length<5&&!g.some(y=>y.id===x.id)){ g.push({...x,moved:[],pool:o.nick}); usedIds.add(x.id) }
-  }));
+  if(poolMode) [true,false].forEach(wantTop=>scored.forEach(x=>poolOwners(x.id).forEach(o=>{
+    if(o.top!==wantTop) return;
+    const g=groups[o.pos]; if(g&&g.length<5&&!g.some(y=>y.id===x.id)){ g.push({...x,moved:[],pool:o.nick+(o.top?" ★":"")}); usedIds.add(x.id) }
+  })));
   scored.forEach(x=>{
     if(usedIds.has(x.id)) return;
     const h=HEROES[x.id];
@@ -1181,15 +1196,54 @@ function renderHints(){
   });
   const col=p=>`<div class="pcol"><h5><span>Поз. <b>${p}</b> · ${POSNAME[p]}</span></h5>${
     groups[p].length?groups[p].map(x=>{const why=shortReason(x.id,team,act)+(x.moved.length?" · "+x.moved.join(", "):"");
-      return `<button class="prow${x.pool?" pool":""}" data-id="${x.id}" data-pos="${p}" title="${esc(HEROES[x.id].name+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
+      return `<button class="prow${x.pool?" pool":""}" data-id="${x.id}" data-pos="${p}" title="${esc(HEROES[x.id].name+(x.pool?" · пул: "+x.pool:"")+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}${x.pool?` <span class="muted" style="font-size:11px">${esc(x.pool)}</span>`:""}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
     :'<span class="muted">нет подходящих</span>'}</div>`;
   el.innerHTML=`<div class="hints-head"><h4>${title}</h4><span class="muted" style="font-size:13px">${team==="A"?"Прогноз по модели — поставь фактический "+(act==="B"?"бан":"пик")+" соперника. ":""}${expl}${hasPicks?" Свободные позиции: <b style=\"color:var(--fg)\">"+(open.join(", ")||"—")+"</b>.":""}</span></div>
-    ${poolMode?'<div class="muted" style="font-size:12px">Жёлтая полоса — герой из пула команды, он идёт первым в колонке своего игрока.</div>':""}
+    ${poolMode?'<div class="muted" style="font-size:12px">Жёлтая полоса — герой из пула команды, он идёт первым в колонке своего игрока, коронные (★) — в самом начале.</div>':""}
     <div class="pcols">${open.map(col).join("")}</div>`;
   el.querySelectorAll(".prow").forEach(b=>{
     b.onclick=()=>{S.sel=+b.dataset.id;S.selPos=+b.dataset.pos;S.selFor=S.sel;renderPool();renderDetail()};
     b.ondblclick=()=>{S.sel=+b.dataset.id;playerConfirm()};
   });
+}
+
+/* ===== ПУЛ КОМАНДЫ прямо во вкладках драфта ===== */
+let POOL_OPEN=(()=>{try{return localStorage.getItem("cm_pool_open")!=="0"}catch(e){return true}})();
+let POOL_MSG="";
+const inPool=n=>TEAM.players.some(p=>p.heroes.includes(n));
+function findHeroByText(t){
+  t=(t||"").trim().toLowerCase(); if(!t) return null;
+  const h=HEROES.find(x=>x.name.toLowerCase()===t||x.ab.toLowerCase()===t)||(HEROES.filter(x=>x.name.toLowerCase().startsWith(t)).length===1?HEROES.find(x=>x.name.toLowerCase().startsWith(t)):null);
+  return h||null;
+}
+function addPoolHero(k,id){
+  const p=TEAM.players[k]; if(!p) return;
+  const n=HEROES[id].name;
+  if(p.heroes.includes(n)){POOL_MSG=`${n} уже в пуле у ${p.nick||"поз. "+p.pos}`}
+  else{p.heroes.push(n);POOL_MSG=`${n} → ${p.nick||"поз. "+p.pos}`;saveTeam()}
+  render();
+}
+function renderTeamPool(){
+  const el=$("#teamPoolCard"); if(!el) return;
+  const show=MAN(); el.hidden=!show; el.style.display=show?"":"none"; if(!show) return;
+  const total=TEAM.players.reduce((s,p)=>s+p.heroes.length,0), un=unavailable();
+  const chip=(p,k,name)=>{const id=BYNAME[name]; if(id==null) return ""; const h=HEROES[id], top=(p.top||[]).includes(name), gone=un.has(id);
+    return `<span class="hchip pchip${top?" top":""}${gone?" gone":""}" title="${esc(name)}${top?" — коронный герой":""}${gone?" — уже взят или забанен":""}"><button class="star" data-star="${k}" data-n="${esc(name)}" aria-label="${top?"Убрать из коронных":"Сделать коронным"}">${top?"★":"☆"}</button>${IMG(h)}${esc(h.ab)}<button data-pdel="${k}" data-n="${esc(name)}" aria-label="Убрать из пула">×</button></span>`};
+  const order=TEAM.players.map((p,k)=>({p,k})).sort((a,b)=>(+a.p.pos)-(+b.p.pos));
+  const rows=order.map(({p,k})=>`<div class="tp-row dz" data-zone="pool" data-k="${k}">
+      <div class="tp-who"><select data-tpos="${k}" aria-label="Позиция">${[1,2,3,4,5].map(x=>`<option value="${x}"${+p.pos===x?" selected":""}>Поз. ${x}</option>`).join("")}</select><input data-tnick="${k}" value="${esc(p.nick)}" placeholder="Ник игрока" aria-label="Ник"></div>
+      <div class="chips">${p.heroes.map(n=>chip(p,k,n)).join("")||'<span class="muted" style="font-size:12px">перетащи сюда героя из списка или впиши справа</span>'}</div>
+      <input data-tadd="${k}" list="poolHeroNames" placeholder="+ герой" aria-label="Добавить героя">
+    </div>`).join("");
+  el.innerHTML=`<div class="tp-head"><h4>Пул команды</h4><span class="muted" style="font-size:12px">${total?`героев: ${total}`:"пока пусто"}${USE.pool?"":" · галочка «Наш пул» выключена — подсказки его не учитывают"}</span><span class="muted" style="font-size:12px;color:var(--gold)">${esc(POOL_MSG)}</span><span style="flex:1"></span><button class="btn" id="tpToggle">${POOL_OPEN?"Свернуть":"Развернуть"}</button></div>
+  ${POOL_OPEN?`<p class="muted" style="margin:4px 0 0;font-size:12px">Герои, на которых каждый из вас уверенно играет. Подсказки по нашим пикам ставят их первыми в колонке позиции игрока, ★ — коронные, у них самый высокий приоритет. В сетке героев они отмечены жёлтой точкой. Добавить: перетащи портрет на строку игрока или впиши имя. ${TEAM.code?"Пул общий для команды по коду.":"Чтобы пул видел друг, создай код команды во вкладке «Подготовка»."}</p>
+  <datalist id="poolHeroNames">${heroNameOptions()}</datalist>${rows}`:""}`;
+  $("#tpToggle").onclick=()=>{POOL_OPEN=!POOL_OPEN;try{localStorage.setItem("cm_pool_open",POOL_OPEN?"1":"0")}catch(e){}renderTeamPool()};
+  el.querySelectorAll("[data-tpos]").forEach(s=>s.onchange=()=>{TEAM.players[+s.dataset.tpos].pos=+s.value;saveTeam();render()});
+  el.querySelectorAll("[data-tnick]").forEach(i=>i.onchange=()=>{TEAM.players[+i.dataset.tnick].nick=i.value.trim().slice(0,24);saveTeam();render()});
+  el.querySelectorAll("[data-tadd]").forEach(i=>i.onchange=()=>{const h=findHeroByText(i.value); if(h) addPoolHero(+i.dataset.tadd,h.id); else if(i.value.trim()){POOL_MSG="нет такого героя";renderTeamPool()}});
+  el.querySelectorAll("[data-pdel]").forEach(b=>b.onclick=()=>{const p=TEAM.players[+b.dataset.pdel], n=b.dataset.n; p.heroes=p.heroes.filter(x=>x!==n); p.top=(p.top||[]).filter(x=>x!==n); POOL_MSG=""; saveTeam(); render()});
+  el.querySelectorAll("[data-star]").forEach(b=>b.onclick=()=>{const p=TEAM.players[+b.dataset.star], n=b.dataset.n; p.top=p.top||[]; p.top=p.top.includes(n)?p.top.filter(x=>x!==n):[...p.top,n]; saveTeam(); render()});
 }
 
 function renderLog(){ $("#log").innerHTML=logHTML(); const el=$("#log"); el.scrollTop=el.scrollHeight; }
@@ -1243,7 +1297,7 @@ function analysisHTML(){
     <div class="ateams">${card(radT,"Radiant"+(sideOf("P")==="rad"?(MAN()?" · мы":" · ты"):""))}${card(dirT,"Dire"+(sideOf("P")==="dire"?(MAN()?" · мы":" · ты"):""))}</div></div>`;
 }
 
-function render(){renderTimeline();renderTeams();renderTurn();renderPool();renderDetail();renderHints();renderLog();renderAnalysis();$("#undoBtn").disabled=!S.history.length}
+function render(){renderTimeline();renderTeams();renderTurn();renderPool();renderDetail();renderHints();renderTeamPool();renderLog();renderAnalysis();$("#undoBtn").disabled=!S.history.length}
 
 /* ===== HISTORY ===== */
 const HKEY="cm_history", HMAX=300;
@@ -1513,12 +1567,15 @@ async function fetchPlayersStratz(accs){
   if(SZ.status!=="ok") await loadStratz(false);
   if(SZ.status!=="ok"){ SZ_PLAYERS_NOTE="STRATZ: "+(SZ.msg||"не удалось подключиться"); return {}; }
   const since=Math.floor(Date.now()/1000)-180*86400;
-  const q=`{ players(steamAccountIds:[${accs.map(a=>+a).join(",")}]){ steamAccountId steamAccount{ name } heroesPerformance(request:{startDateTime:${since}, take:1000}, take:60){ heroId matchCount winCount positionScore{ id matchCount } } } }`;
+  // STRATZ отдаёт не больше 5 игроков на одно поле players — режем на пачки и шлём алиасами в одном запросе
+  const chunks=[]; for(let k=0;k<accs.length;k+=5) chunks.push(accs.slice(k,k+5));
+  const q="{ "+chunks.map((ids,n)=>`p${n}: players(steamAccountIds:[${ids.map(a=>+a).join(",")}]){ steamAccountId steamAccount{ name } heroesPerformance(request:{startDateTime:${since}, take:1000}, take:60){ heroId matchCount winCount positionScore{ id matchCount } } }`).join(" ")+" }";
   const r=await fetchT(SZ_URL,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+szToken()},body:JSON.stringify({query:q})},12000);
   if(!r.ok) throw new Error("STRATZ ответил "+r.status);
   const j=await r.json(); const out={};
-  if(j.errors&&j.errors.length&&!(j.data&&j.data.players)) throw new Error("STRATZ: "+j.errors[0].message);
-  ((j.data&&j.data.players)||[]).forEach(pl=>{
+  const lists=Object.values(j.data||{}).filter(Array.isArray);
+  if(j.errors&&j.errors.length&&!lists.length) throw new Error("STRATZ: "+j.errors[0].message);
+  lists.flat().forEach(pl=>{
     if(!pl) return;
     const heroes=(pl.heroesPerformance||[]).filter(x=>x.matchCount>0&&SZ.id[x.heroId]!=null).map(x=>{
       const pos={}; (x.positionScore||[]).forEach(ps=>{const n=+String(ps.id||"").replace("POSITION_",""); if(n>=1&&n<=5&&ps.matchCount) pos[n]=ps.matchCount});
@@ -1788,7 +1845,7 @@ function wirePrep(){
     row.querySelector('[data-f="pos"]').onchange=e=>{p.pos=+e.target.value;saveTeam()};
     row.querySelector('[data-f="acc"]').onchange=e=>{p.acc=e.target.value.trim();saveTeam()};
     row.querySelector('[data-f="add"]').onchange=e=>{const n=e.target.value.trim(); if(BYNAME[n]!=null&&!p.heroes.includes(n)){p.heroes.push(n);saveTeam();renderPrep()} else if(n){PREP_MSG["p"+k]="нет такого героя";renderPrep()}};
-    row.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{p.heroes=p.heroes.filter(x=>x!==b.dataset.del);saveTeam();renderPrep()});
+    row.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{p.heroes=p.heroes.filter(x=>x!==b.dataset.del);p.top=(p.top||[]).filter(x=>x!==b.dataset.del);saveTeam();renderPrep()});
     row.querySelector('[data-act="pull"]').onclick=async()=>{
       PREP_MSG["p"+k]="загружаю…"; renderPrep();
       try{ const r=await fetchPlayer(p.acc); const top=r.heroes.filter(x=>x.g>3).slice(0,10);
@@ -1826,10 +1883,11 @@ $("#posChips").addEventListener("click",e=>{const c=e.target.closest(".chip");if
 /* drag & drop: hero tile -> your pick slots / ban slots / current timeline cell */
 let dragId=null;
 function myAct(){ return (!done()&&(MAN()||teamOfStep(S.step)==="P")) ? ORD()[S.step].act : null }
+let dragDraftOk=false;
 function markZones(){
-  const act=myAct();
+  const act=dragDraftOk?myAct():null;
   const ct=done()?null:teamOfStep(S.step);
-  document.querySelectorAll(".dz").forEach(z=>z.classList.toggle("ok",z.dataset.zone===act&&(!z.dataset.team||z.dataset.team===ct)));
+  document.querySelectorAll(".dz").forEach(z=>z.classList.toggle("ok",z.dataset.zone==="pool"?(MAN()&&POOL_OPEN):(!!act&&z.dataset.zone===act&&(!z.dataset.team||z.dataset.team===ct))));
   const cur=document.querySelector(".tl.cur"); if(cur){cur.classList.toggle("dz",!!act);cur.classList.toggle("ok",!!act);cur.dataset.zone=act||""}
 }
 function zoneAt(target){const z=target.closest&&target.closest(".dz.ok");return z&&dragId!=null?z:null}
@@ -1837,8 +1895,9 @@ function clearDrag(){dragId=null;document.body.classList.remove("dnd");document.
 $("#pool").addEventListener("dragstart",e=>{
   const b=e.target.closest(".hero"); if(!b) return;
   const id=+b.dataset.id;
-  if(unavailable().has(id)||!myAct()){e.preventDefault();return}
-  dragId=id; S.sel=id;
+  const canDraft=!unavailable().has(id)&&!!myAct(), canPool=MAN()&&POOL_OPEN;
+  if(!canDraft&&!canPool){e.preventDefault();return}
+  dragId=id; dragDraftOk=canDraft; if(canDraft) S.sel=id;
   e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",String(id));
   const img=b.querySelector("img"); if(img) e.dataTransfer.setDragImage(img,30,17);
   document.body.classList.add("dnd"); markZones(); renderPool(); renderDetail();
@@ -1853,7 +1912,9 @@ document.addEventListener("drop",e=>{
   if(dragId==null) return;
   const z=zoneAt(e.target); const id=dragId; clearDrag();
   if(!z) return;
-  e.preventDefault(); S.sel=id; playerConfirm();
+  e.preventDefault();
+  if(z.dataset.zone==="pool"){ addPoolHero(+z.dataset.k,id); return }
+  S.sel=id; playerConfirm();
 });
 document.addEventListener("dragend",clearDrag);
 $("#search").addEventListener("input",e=>{S.search=e.target.value;renderPool()});
