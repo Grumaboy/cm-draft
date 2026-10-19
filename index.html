@@ -56,6 +56,9 @@ body.view-page .settings, body.view-page #timeline, body.view-page .board, body.
 .hchip .gw{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
 .hchip button{background:none;border:0;color:var(--muted);padding:0 2px;font-size:14px;line-height:1}
 .hchip button:hover{color:var(--bad)}
+.protect{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px;padding:8px;border:1px solid color-mix(in srgb,var(--gold) 40%,var(--line));border-radius:6px}
+.protect .sub{font-size:12px;color:var(--gold);text-transform:uppercase;letter-spacing:.04em}
+.protect-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:6px}
 .tp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tp-head h4{margin:0}
 .tp-row{display:grid;grid-template-columns:minmax(190px,230px) minmax(0,1fr) 150px;gap:8px;align-items:center;border-top:1px solid var(--line);padding:6px 4px}
@@ -654,6 +657,7 @@ async function loadHeroStats(force){
     applyHeroStats(d); DATA.status="ok"; DATA.updated=new Date(c.t);
     if(force){DATA.mu={};for(let i=0;i<N;i++)CTR[i].set(CTR_R[i])}
     allPicked().forEach(id=>loadMatchups(id,force));
+    setTimeout(warmPool,1500);
   }catch(e){DATA.status="fail"}
   renderData(); render();
 }
@@ -743,6 +747,7 @@ async function loadStratz(force){
     applySzBase(d); SZ.status="ok"; SZ.updated=new Date(c.t); SZ.msg="";
     if(force){SZ.vs={};SZ.with={}}
     allPicked().forEach(id=>loadStratzMU(id,force));
+    setTimeout(warmPool,1500);
   }catch(e){SZ.status="fail";SZ.msg=e.message}
   renderData(); render(); renderStratzPanel();
 }
@@ -847,6 +852,33 @@ function poolBonus(id){
   const top=o.some(x=>x.top);
   return {v:Math.min(2.4,0.8+best*0.6+(top?0.6:0)), who:o.map(x=>x.nick+(x.top?" ★":"")).join(", ")};
 }
+/* насколько вражеский герой x мешает нашему пулу: контрит героев, которых мы ещё хотим взять */
+const poolIds=()=>[...new Set(TEAM.players.flatMap(p=>p.heroes).map(n=>BYNAME[n]).filter(x=>x!=null))];
+function poolThreat(x){
+  if(!USE.pool||inPool(HEROES[x].name)) return {v:0,list:[]};   // свой же пул не баним
+  const un=unavailable(), open=new Set(openPositions("P")), best={};
+  TEAM.players.forEach(p=>{
+    if(!open.has(+p.pos)) return;                      // позиция игрока уже закрыта — его пул не важен
+    p.heroes.forEach(n=>{const h=BYNAME[n]; if(h==null||h===x||un.has(h)) return;
+      const c=CTR[x][h]; if(c<0.5) return;
+      const w=(p.top||[]).includes(n)?1:0.55, k=c*w;
+      if(!best[h]||best[h].k<k) best[h]={h,c,k,top:w===1,nick:p.nick||"поз. "+p.pos};
+    });
+  });
+  const list=Object.values(best).sort((a,b)=>b.k-a.k);
+  return {v:Math.min(3,list.reduce((s,r)=>s+r.k,0)*0.6), list};
+}
+/* защитный бан должен быть ещё и сильным героем: контрпик не по мете весит мало */
+const metaFactor=id=>Math.max(0.15,Math.min(1.3,0.3+0.35*(HEROES[id].meta+1)));
+function protectScore(id){const t=poolThreat(id); return {t, w:t.v*metaFactor(id)}}
+const threatText=t=>"мешает: "+t.list.slice(0,3).map(r=>HEROES[r.h].ab+(r.top?" ★":"")).join(", ");
+let WARM_BUSY=false; const WARM_TRIED=new Set();
+async function warmPool(){                             // матчапы героев пула нужны, чтобы видеть их контрпики
+  if(WARM_BUSY) return; WARM_BUSY=true;
+  try{ for(;;){ const id=poolIds().find(i=>!WARM_TRIED.has(i)); if(id==null) break; WARM_TRIED.add(id);
+    await loadMatchups(id); await loadStratzMU(id); } }
+  finally{ WARM_BUSY=false }
+}
 function scoutInfo(id){
   const o=activeOpp(); if(!o) return {v:0,who:"",list:[]};
   const n=HEROES[id].name, list=[];
@@ -927,11 +959,12 @@ function scoreAll(team,act){
   const all=HEROES.filter(h=>!un.has(h.id));
   let pool=all;
   if(picks(target).length){ const f=all.filter(h=>roleInfo(h.id,target).ok); if(f.length) pool=f; }
-  return pool.map(h=>({id:h.id,v:act==="P"?evalHero(h.id,team).total:banValue(h.id,team)})).sort((a,b)=>b.v-a.v);
+  return pool.map(h=>({id:h.id,v:act==="P"?evalHero(h.id,team).total:banValue(h.id,team)+(team==="P"?(USE.pool&&inPool(h.name)?-1:protectScore(h.id).w):0)})).sort((a,b)=>b.v-a.v);
 }
 function shortReason(id,team,act){
   if(act==="B"){
     const opp=other(team),e=evalHero(id,opp),bits=[],us=team==="P";
+    if(us){const ps=protectScore(id); if(ps.w>=0.35) bits.push(threatText(ps.t))}
     if(e.comfort>0.3) bits.push(us?"у них: "+e.comfortWho:"наш пул: "+e.comfortWho);
     if(e.syn>1) bits.push(us?"связка у соперника":"наша связка");
     if(e.ctr>1) bits.push(us?"контрит "+L().ours:"контрит их пики");
@@ -1155,6 +1188,7 @@ function renderDetail(){
     <div class="rel"><div class="sub">${lbl.ctr}</div>${relList(ctrR,persp==="P"?"pos":"neg")}</div>
     <div class="rel"><div class="sub">${lbl.thr}</div>${relList(thrR,persp==="P"?"neg":"pos")}</div>
   </div>
+  ${banView&&actor==="P"?(()=>{const t=poolThreat(id); return t.list.length?`<div style="font-size:13px"><span style="color:var(--gold)">Мешает нашему пулу:</span> ${t.list.map(r=>esc(HEROES[r.h].name+(r.top?" ★":"")+" ("+r.nick+")")).join(", ")}</div>`:""})():""}
   ${banView?`<div class="muted" style="font-size:13px">Сейчас бан — показано, насколько герой усилил бы ${persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютер")}.</div>`:""}
   <div class="score">${banView?"ценность бана":"для "+(persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютера"))} <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
   <div class="score">${banView?"сам бы его взял":"для другой стороны"} <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · не по ролям":""}</div>
@@ -1198,11 +1232,17 @@ function renderHints(){
     groups[p].length?groups[p].map(x=>{const why=shortReason(x.id,team,act)+(x.moved.length?" · "+x.moved.join(", "):"");
       return `<button class="prow${x.pool?" pool":""}" data-id="${x.id}" data-pos="${p}" title="${esc(HEROES[x.id].name+(x.pool?" · пул: "+x.pool:"")+": "+why)}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}${x.pool?` <span class="muted" style="font-size:11px">${esc(x.pool)}</span>`:""}</div><div class="rs">${esc(why)}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`}).join("")
     :'<span class="muted">нет подходящих</span>'}</div>`;
+  let protect="";
+  if(team==="P"&&act==="B"&&USE.pool&&TEAM.players.some(p=>p.heroes.length)){
+    const un=unavailable();
+    const rows=HEROES.filter(h=>!un.has(h.id)).map(h=>{const ps=protectScore(h.id); return {id:h.id,t:ps.t,w:ps.w,v:banValue(h.id,"P")+ps.w}}).filter(x=>x.w>=0.35).sort((a,b)=>b.v-a.v).slice(0,6);
+    protect=`<div class="protect"><div class="sub">Сильные по мете и мешают нашему пулу</div>${rows.length?`<div class="protect-row">${rows.map(x=>`<button class="prow pool" data-id="${x.id}" data-pos="0" title="${esc(HEROES[x.id].name+" контрит: "+x.t.list.map(r=>HEROES[r.h].name+(r.top?" ★":"")+" ("+r.nick+")").join(", "))}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc((HEROES[x.id].meta>1?"мета · ":"")+threatText(x.t))}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`:'<span class="muted" style="font-size:12px">Сильных контрпиков к нашему пулу среди доступных героев не видно.</span>'}</div>`;
+  }
   el.innerHTML=`<div class="hints-head"><h4>${title}</h4><span class="muted" style="font-size:13px">${team==="A"?"Прогноз по модели — поставь фактический "+(act==="B"?"бан":"пик")+" соперника. ":""}${expl}${hasPicks?" Свободные позиции: <b style=\"color:var(--fg)\">"+(open.join(", ")||"—")+"</b>.":""}</span></div>
     ${poolMode?'<div class="muted" style="font-size:12px">Жёлтая полоса — герой из пула команды, он идёт первым в колонке своего игрока, коронные (★) — в самом начале.</div>':""}
-    <div class="pcols">${open.map(col).join("")}</div>`;
+    ${protect}<div class="pcols">${open.map(col).join("")}</div>`;
   el.querySelectorAll(".prow").forEach(b=>{
-    b.onclick=()=>{S.sel=+b.dataset.id;S.selPos=+b.dataset.pos;S.selFor=S.sel;renderPool();renderDetail()};
+    b.onclick=()=>{S.sel=+b.dataset.id;S.selPos=+b.dataset.pos||null;S.selFor=S.sel;renderPool();renderDetail()};
     b.ondblclick=()=>{S.sel=+b.dataset.id;playerConfirm()};
   });
 }
@@ -1220,7 +1260,7 @@ function addPoolHero(k,id){
   const p=TEAM.players[k]; if(!p) return;
   const n=HEROES[id].name;
   if(p.heroes.includes(n)){POOL_MSG=`${n} уже в пуле у ${p.nick||"поз. "+p.pos}`}
-  else{p.heroes.push(n);POOL_MSG=`${n} → ${p.nick||"поз. "+p.pos}`;saveTeam()}
+  else{p.heroes.push(n);POOL_MSG=`${n} → ${p.nick||"поз. "+p.pos}`;saveTeam();setTimeout(warmPool,300)}
   render();
 }
 function renderTeamPool(){
