@@ -282,11 +282,56 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
   .center{grid-column:1/-1;order:3}
   .pool{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+#setToggle,#mbar{display:none}
 @media (max-width:720px){
   .lower,.cols3,.ateams{grid-template-columns:minmax(0,1fr)}
   .pool{grid-template-columns:minmax(0,1fr)}
-  .board{grid-template-columns:minmax(0,1fr)}
   .settings{margin-left:0}
+  /* телефон: навигация в одну строку с прокруткой */
+  .nav-in{flex-wrap:nowrap;gap:6px;padding-inline:6px}
+  .nav-logo,.nav-hint,.nav-btn{display:none}
+  .tabs{overflow-x:auto;scrollbar-width:none;flex:1;-webkit-overflow-scrolling:touch}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{padding:11px 10px 8px;font-size:15px;white-space:nowrap}
+  .wrap{padding-inline:8px;padding-block:8px 90px;gap:8px}
+  input,select,textarea{font-size:16px!important}
+  .brand{font-size:20px}
+  /* настройки прячутся за кнопкой, «Отменить» и «Новый драфт» всегда под рукой */
+  .settings{width:100%;gap:6px}
+  #setToggle{display:inline-block}
+  body:not(.set-open) .settings>:not(#setToggle):not(#undoBtn):not(#newBtn){display:none}
+  .chk{padding-top:0}
+  /* команды рядом друг с другом, компактно */
+  .board{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+  .center{grid-column:1/-1;order:3}
+  .team{padding:7px;gap:5px}
+  .team h2{font-size:16px;flex-wrap:wrap;gap:2px}
+  .team h2 span{font-size:10px}
+  .team .prof,.team .meters{display:none}
+  .slots{gap:3px}
+  .slot{min-height:30px;padding:2px 4px;gap:4px;font-size:12px}
+  .slot .pimg{width:38px}
+  .slot>span.muted{display:none}
+  .slot b{font-size:14px!important}
+  .slot .possel{font-size:11px!important;padding:0}
+  .bans{grid-template-columns:repeat(4,1fr);gap:2px}
+  .bans .b{height:22px;font-size:11px}
+  .bans .b.e{font-size:8px}
+  .timeline{grid-template-columns:repeat(24,34px)!important}
+  .turn{padding:8px 10px;gap:6px 10px}
+  .turn .who{font-size:20px}
+  /* подсказки: по 3 героя на позицию */
+  .pcol .prow:nth-of-type(n+4){display:none}
+  .protect-row .prow:nth-child(n+5){display:none}
+  .grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:3px}
+  .hero.img .nm{font-size:9px;padding:6px 2px 1px}
+  .tp-row{grid-template-columns:minmax(0,1fr)}
+  /* нижняя панель выбранного героя */
+  #mbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;align-items:center;gap:8px;padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--panel) 96%,transparent);border-top:1px solid var(--line);backdrop-filter:blur(6px)}
+  #mbar[hidden]{display:none!important}
+  #mbar img{width:56px;aspect-ratio:16/9;object-fit:cover;border-radius:3px}
+  #mbar .nm{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #mbar .btn{padding:9px 12px}
 }
 @media (prefers-reduced-motion:no-preference){.hero,.tl{transition:opacity .15s,border-color .15s}}
 </style>
@@ -310,6 +355,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
   <div class="top">
     <div class="brand">CM Драфт-тренажёр<small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
     <div class="settings">
+      <button class="btn" id="setToggle" aria-expanded="false">⚙ Настройки</button>
       <div class="field"><label for="setSide">Сторона</label>
         <select id="setSide"><option value="rad">Radiant</option><option value="dire">Dire</option></select></div>
       <div class="field"><label for="setOrder">Очерёдность</label>
@@ -365,6 +411,7 @@ body.dnd .dz.ok + .dz-hint, body.dnd .dz-hint.ok{display:block}
   </div>
 </div>
 
+<div id="mbar" hidden></div>
 <script>
 /* ===== DATA ===== name|abbr|attr|range|positions|tags|pub winrate|pro priority */
 const RAW = `Anti-Mage|AM|agi|M|1|ph lt mo mb sq|50.9|0.5
@@ -1117,7 +1164,7 @@ function teamHTML(side){
   return `<h2>${side==="rad"?"Radiant":"Dire"} <span>${team==="P"?'<span class="you">'+L().meTag+'</span>':L().oppTag} · ${first?"1-й пик":"2-й пик"}</span></h2>
   <div class="slots${dz("P")}">${slots.join("")}</div>
   ${AP()?"":`<div class="sub">Баны</div><div class="bans${dz("B")}">${bl.join("")}</div>`}
-  <div class="sub">Профиль драфта</div>
+  <div class="sub prof">Профиль драфта</div>
   <div class="meters">${m("Контроль",p.control,6)}${m("Инициация",p.init,3)}${m("Тимфайт",p.aoe,5)}${m("Сейв/хил",p.save,3)}${m("Пуш",p.push,4)}${m("Физ. урон",p.ph,4)}${m("Маг. урон",p.mg,4)}${m("Лейт",p.late,3)}</div>`;
 }
 function renderTeams(){ $("#teamRad").innerHTML=teamHTML("rad"); $("#teamDire").innerHTML=teamHTML("dire");
@@ -1163,7 +1210,7 @@ function renderDetail(){
   const el=$("#detail");
   const id=S.sel;
   if(id==null){
-    el.innerHTML=`<h4>Герой</h4><p class="muted" style="margin:0">Нажми на героя. На пике видно, как он впишется в твой драфт; на бане — насколько он усилил бы соперника. Двойной клик или Enter подтверждает выбор.</p>`;return}
+    el.innerHTML=`<h4>Герой</h4><p class="muted" style="margin:0">Нажми на героя. На пике видно, как он впишется в твой драфт; на бане — насколько он усилил бы соперника. Двойной клик или Enter подтверждает выбор.</p>`;renderMbar(null);return}
   const h=HEROES[id], un=unavailable().has(id);
   const myTurn=!!myAct(), act=done()?"P":ORD()[S.step].act, forOpp=MAN()&&!done()&&teamOfStep(S.step)==="A";
   const actor = done()?"P":evalTeamOf(teamOfStep(S.step));
@@ -1194,6 +1241,19 @@ function renderDetail(){
   <div class="score">${banView?"сам бы его взял":"для другой стороны"} <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · не по ролям":""}</div>
   <div class="actions">${un?`<span class="muted">Герой уже занят или забанен</span>`:myTurn?`<button class="btn primary" id="confirmBtn">${act==="B"?"Забанить":"Пикнуть"} ${esc(h.ab)}${forOpp?" за соперника":""}</button>`:`<span class="muted">Сейчас ход компьютера</span>`}</div>`;
   const cb=$("#confirmBtn"); if(cb) cb.onclick=playerConfirm;
+  renderMbar(h,un,myTurn,act,forOpp);
+}
+/* телефон: панель выбранного героя прижата к низу экрана, чтобы не листать до карточки */
+function renderMbar(h,un,myTurn,act,forOpp){
+  const bar=$("#mbar"); if(!bar) return;
+  if(!h||document.body.classList.contains("view-page")){bar.hidden=true;return}
+  bar.hidden=false;
+  bar.innerHTML=`${IMG(h)}<span class="nm">${esc(h.name)}</span>`+
+    (!un&&myTurn?`<button class="btn primary" id="mbarGo">${act==="B"?"Бан":"Пик"}${forOpp?" за соп.":""}</button>`:"")+
+    `<button class="btn" id="mbarInfo" aria-label="Подробнее о герое">Инфо</button><button class="btn" id="mbarX" aria-label="Снять выбор">✕</button>`;
+  const g=$("#mbarGo"); if(g) g.onclick=playerConfirm;
+  $("#mbarInfo").onclick=()=>$("#detail").scrollIntoView({behavior:"smooth",block:"start"});
+  $("#mbarX").onclick=()=>{S.sel=null;renderPool();renderDetail()};
 }
 
 function renderHints(){
@@ -1248,7 +1308,7 @@ function renderHints(){
 }
 
 /* ===== ПУЛ КОМАНДЫ прямо во вкладках драфта ===== */
-let POOL_OPEN=(()=>{try{return localStorage.getItem("cm_pool_open")!=="0"}catch(e){return true}})();
+let POOL_OPEN=(()=>{const narrow=window.matchMedia&&matchMedia("(max-width:720px)").matches; try{const v=localStorage.getItem("cm_pool_open"); return v==null?!narrow:v!=="0"}catch(e){return !narrow}})();
 let POOL_MSG="";
 const inPool=n=>TEAM.players.some(p=>p.heroes.includes(n));
 function findHeroByText(t){
@@ -1564,8 +1624,10 @@ function renderHistory(){
 function showView(v){
   VIEW=v;
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===v));
+  {const at=document.querySelector(`.tab[data-mode="${v}"]`); const tb=at&&at.parentElement; if(tb&&tb.scrollWidth>tb.clientWidth) tb.scrollLeft=Math.max(0,at.offsetLeft-tb.clientWidth/2+at.offsetWidth/2)}
   const pages={history:$("#historyView"),prep:$("#prepView"),teams:$("#teamsView")}, isPage=!!pages[v];
   document.body.classList.toggle("view-page",isPage);
+  if(isPage){const mb=$("#mbar"); if(mb) mb.hidden=true}
   Object.entries(pages).forEach(([k,el])=>{const on=k===v;el.hidden=!on;el.style.display=on?"":"none"});
   if(isPage){
     clearTimeout(STATES.ai.aiTimer);
@@ -1987,6 +2049,7 @@ function setMode(m){
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.mode));
 ["#setSide","#setOrder","#setDiff"].forEach(sel=>$(sel).addEventListener("change",()=>{ if(S.step===0) newDraft() }));
 $("#newBtn").onclick=newDraft;
+$("#setToggle").onclick=()=>{const o=document.body.classList.toggle("set-open");$("#setToggle").setAttribute("aria-expanded",o)};
 $("#undoBtn").onclick=undo;
 $("#setHints").onchange=e=>{S.hints=e.target.checked;render()};
 $("#usePool").checked=USE.pool; $("#useScout").checked=USE.scout;
