@@ -1283,10 +1283,10 @@ function renderHints(){
   let scored=scoreAll(team,act); const usedIds=new Set(), clashed=[];
   if(team==="P"&&act==="P"&&USE.pool) scored=scored.filter(x=>{ if(!inPool(HEROES[x.id].name)) return true; const c=poolClash(x.id); if(c){clashed.push([x.id,c]);return false} return true });
   const poolMode = USE.pool && team==="P" && act==="P" && TEAM.players.some(p=>p.heroes.length);
-  if(poolMode) [true,false].forEach(wantTop=>scored.forEach(x=>poolOwners(x.id).forEach(o=>{
-    if(o.top!==wantTop) return;
-    const g=groups[o.pos]; if(g&&g.length<HINTS_N&&!g.some(y=>y.id===x.id)){ g.push({...x,moved:[],pool:o.nick+(o.top?" ★":"")}); usedIds.add(x.id) }
-  })));
+  // первые POOL_FIRST мест в колонке — лучшие по оценке герои из пула игрока этой позиции, дальше — все остальные по оценке
+  if(poolMode) scored.forEach(x=>poolOwners(x.id).forEach(o=>{
+    const g=groups[o.pos]; if(g&&g.filter(y=>y.pool).length<POOL_FIRST&&!g.some(y=>y.id===x.id)&&!usedIds.has(x.id)){ g.push({...x,moved:[],pool:o.nick+(o.top?" ★":"")}); usedIds.add(x.id) }
+  }));
   scored.forEach(x=>{
     if(usedIds.has(x.id)) return;
     const h=HEROES[x.id];
@@ -1306,7 +1306,7 @@ function renderHints(){
     protect=`<div class="protect"><div class="sub">Сильные по мете и мешают нашему пулу</div>${rows.length?`<div class="protect-row">${rows.map(x=>`<button class="prow pool" data-id="${x.id}" data-pos="0" title="${esc(HEROES[x.id].name+" контрит: "+x.t.list.map(r=>HEROES[r.h].name+(r.top?" ★":"")+" ("+r.nick+")").join(", "))}">${IMG(HEROES[x.id],"pimg")}<span style="min-width:0"><div class="nm">${esc(HEROES[x.id].name)}</div><div class="rs">${esc((HEROES[x.id].meta>1?"мета · ":"")+threatText(x.t))}</div></span><span class="v">${x.v.toFixed(1)}</span></button>`).join("")}</div>`:'<span class="muted" style="font-size:12px">Сильных контрпиков к нашему пулу среди доступных героев не видно.</span>'}</div>`;
   }
   el.innerHTML=`<div class="hints-head"><h4>${title}</h4><span class="muted" style="font-size:13px">${team==="A"?"Прогноз по модели — поставь фактический "+(act==="B"?"бан":"пик")+" соперника. ":""}${expl}${hasPicks?" Свободные позиции: <b style=\"color:var(--fg)\">"+(open.join(", ")||"—")+"</b>.":""}</span></div>
-    ${poolMode?'<div class="muted" style="font-size:12px">Жёлтая полоса — герой из пула команды, он идёт первым в колонке своего игрока, коронные (★) — в самом начале.</div>':""}
+    ${poolMode?'<div class="muted" style="font-size:12px">Жёлтая полоса — герой из пула команды: до трёх лучших по оценке стоят первыми в колонке своего игрока, ниже — остальные герои, которые лучше всего вписываются.</div>':""}
     ${clashed.length?`<div class="muted" style="font-size:12px">Скрыты из пула — плохо сочетаются с нашими пиками: ${clashed.map(([i,c])=>esc(HEROES[i].name)+" (с "+esc(c.join(", "))+")").join("; ")}.</div>`:""}${protect}<div class="pcols">${open.map(col).join("")}</div>`;
   el.querySelectorAll(".prow").forEach(b=>{
     b.onclick=()=>{S.sel=+b.dataset.id;S.selPos=+b.dataset.pos||null;S.selFor=S.sel;renderPool();renderDetail()};
@@ -1316,6 +1316,7 @@ function renderHints(){
 
 /* ===== ПУЛ КОМАНДЫ прямо во вкладках драфта ===== */
 const HINTS_N=7;          // сколько героев показывать на каждую позицию
+const POOL_FIRST=3;       // сколько из них — наши герои из пула (всегда сверху)
 let POOL_OPEN=(()=>{const narrow=window.matchMedia&&matchMedia("(max-width:720px)").matches; try{const v=localStorage.getItem("cm_pool_open"); return v==null?!narrow:v!=="0"}catch(e){return !narrow}})();
 let POOL_MSG="";
 const inPool=n=>TEAM.players.some(p=>p.heroes.includes(n));
