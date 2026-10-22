@@ -982,7 +982,7 @@ function renderData(){
   const sz = SZ.pre ? "" : SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
     : SZ.status==="loading" ? " · STRATZ: загрузка…" : SZ.status==="fail" ? " · STRATZ: ошибка" : " · STRATZ не подключён";
   el.textContent = od+sz;
-  btn.hidden = DATA.status==="loading";
+  btn.hidden = DATA.status==="loading" || (DATA.status==="ok"&&DATA.pre);   // данные обновляются сами раз в 8 часов
   btn.textContent = DATA.status==="fail" ? "повторить" : "обновить";
 }
 
@@ -1227,7 +1227,7 @@ function commit(id,team){
   S.selPos=null; S.selFor=null;
   S.log.push({i,team,act,id,g});
   if(!S.draftId) S.draftId=newDraftId();
-  if(done()){ const rec=recordFromState(); histUpsert(rec); dbInsert(rec); }
+  if(done()){ const rec=recordFromState(); histUpsert(rec); dbInsert(rec); ownDraft(rec.id,{tok:histLoad().find(x=>x.id===rec.id).tok}); }
   if(!setLockAfter&&act==="P"&&id>=0&&team==="P"){
     // герой из пула команды встаёт на позицию своего игрока, если она ещё свободна
     const taken=new Set(picks("P").filter(x=>x!==id&&S.locks[x]).map(x=>S.locks[x]));
@@ -1632,7 +1632,7 @@ const DB={url:"https://xxcamhzdaibiotzgcobn.supabase.co",key:"sb_publishable_SiE
 const dbOn=()=>!!(DB.url&&DB.key);
 const NICK_KEY="cm_nick";
 const getNick=()=>{try{return localStorage.getItem(NICK_KEY)||""}catch(e){return ""}};
-let HREMOTE=null, HREMOTE_ERR="", HSRC="all";
+let HREMOTE=null, HREMOTE_ERR="", HSRC="all", HSYNC="";
 const idToName=x=>x==null?null:x<0?"-":HEROES[x].name;
 const nameToId=n=>n==null?null:n==="-"?-1:(BYNAME[n]??null);
 function toDb(r){return {id:r.id,created_at:new Date(r.t).toISOString(),mode:r.mode,side:r.side,first_pick:!!r.first,order_sides:r.order||null,edit_token:r.tok||null,
@@ -1646,7 +1646,11 @@ function fromDb(x){
 const dbHeaders=()=>({apikey:DB.key,"Content-Type":"application/json"});
 async function dbInsert(rec){
   if(!dbOn()) return;
-  try{ await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts",{method:"POST",headers:{...dbHeaders(),Prefer:"resolution=ignore-duplicates,return=minimal"},body:JSON.stringify(toDb(rec))}) }catch(e){}
+  try{ const r=await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts",{method:"POST",headers:{...dbHeaders(),Prefer:"resolution=ignore-duplicates,return=minimal"},body:JSON.stringify(toDb(rec))});
+    if(r.ok) return true;
+    let msg=""; try{ const j=await r.json(); msg=j.message||j.hint||"" }catch(e){}
+    return "база ответила "+r.status+(msg?": "+msg:"");
+  }catch(e){ return "нет связи с базой" }
 }
 async function dbFetch(){
   if(!dbOn()) return;
@@ -1655,21 +1659,48 @@ async function dbFetch(){
     const r=await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts?select=id,created_at,mode,side,first_pick,order_sides,draft,log,author,result&order=created_at.desc&limit=500",{headers:dbHeaders()});
     if(!r.ok) throw new Error("ошибка базы "+r.status);
     HREMOTE=(await r.json()).map(fromDb).filter(validRecord);
+    const rem=new Set(HREMOTE.map(x=>x.id)), miss=histLoad().filter(x=>!rem.has(x.id)&&validRecord(x)).slice(0,30);
+    HSYNC="";
+    if(miss.length){                                              // драфты этого браузера, которые раньше не дошли до базы
+      const res=await Promise.all(miss.map(dbInsert)), bad=res.filter(x=>x!==true);
+      if(bad.length) HSYNC=`${bad.length} из ${miss.length} драфтов этого браузера не удалось отправить в общую базу (${bad[0]}) — они видны только здесь.`;
+      else HSYNC=`отправлено в общую базу драфтов из этого браузера: ${miss.length}`;
+      if(bad.length<miss.length){ const r2=await fetch(DB.url.replace(/\/$/,"")+"/rest/v1/drafts?select=id,created_at,mode,side,first_pick,order_sides,draft,log,author,result&order=created_at.desc&limit=500",{headers:dbHeaders()}); if(r2.ok) HREMOTE=(await r2.json()).map(fromDb).filter(validRecord) }
+    }
   }catch(e){HREMOTE_ERR=e.message||"нет связи с базой"}
   if(VIEW==="history") renderHistory();
 }
+/* «свои» драфты команды: токен для правки результата, название и скрытие хранятся в данных команды (по коду),
+   поэтому на любом устройстве с тем же кодом история и результаты одинаковые */
+const teamDrafts=()=>TEAM.drafts||(TEAM.drafts={});
+function ownDraft(id,patch){ if(!id) return; const d=teamDrafts(); d[id]={...(d[id]||{}),...patch}; saveTeam() }
+const ownMeta=id=>(TEAM.drafts||{})[id]||null;
+const isOwn=id=>!!(ownMeta(id)||histLoad().some(x=>x.id===id));
+const tokenOf=id=>{const l=histLoad().find(x=>x.id===id); return (l&&l.tok)||(ownMeta(id)||{}).tok||null};
+const nameOf=r=>(ownMeta(r.id)||{}).name||r.name||"";
+function syncOwnDrafts(){                       // переносим токены черновиков этого браузера в данные команды
+  if(!TEAM.code) return; const d=teamDrafts(); let ch=false;
+  histLoad().forEach(r=>{ if(r.tok&&!(d[r.id]&&d[r.id].tok)){ d[r.id]={...(d[r.id]||{}),tok:r.tok,...(r.name?{name:r.name}:{})}; ch=true } });
+  if(ch) saveTeam();
+}
 function historySource(){
-  const local=histLoad();
-  if(!dbOn()||HREMOTE==null) return local;
-  const loc=Object.fromEntries(local.map(r=>[r.id,r]));
-  const merged=HREMOTE.map(r=>loc[r.id]&&loc[r.id].res&&!r.res?{...r,res:loc[r.id].res}:r);
-  if(HSRC==="mine") return merged.filter(r=>loc[r.id]);
-  return merged;
+  const local=histLoad(), hidden=id=>(ownMeta(id)||{}).del;
+  let list;
+  if(!dbOn()||HREMOTE==null) list=local;
+  else{
+    const loc=Object.fromEntries(local.map(r=>[r.id,r])), rem=new Set(HREMOTE.map(r=>r.id));
+    list=HREMOTE.map(r=>loc[r.id]&&loc[r.id].res&&!r.res?{...r,res:loc[r.id].res}:r)
+      .concat(local.filter(r=>!rem.has(r.id)))               // ещё не попавшие в базу — тоже показываем
+      .sort((a,b)=>b.t-a.t);
+  }
+  list=list.filter(r=>!hidden(r.id)).map(r=>({...r,name:nameOf(r)}));
+  if(HSRC==="mine") return list.filter(r=>isOwn(r.id));
+  return list;
 }
 
 async function setResult(id,res){
-  const l=histLoad(), k=l.findIndex(x=>x.id===id); let tok=null;
-  if(k>=0){ l[k].res=res; tok=l[k].tok; histSave(l); }
+  const l=histLoad(), k=l.findIndex(x=>x.id===id); const tok=tokenOf(id);
+  if(k>=0){ l[k].res=res; histSave(l); }
   if(HREMOTE){ const x=HREMOTE.find(r=>r.id===id); if(x) x.res=res; }
   RES_MSG="";
   if(dbOn()&&tok){
@@ -1679,7 +1710,7 @@ async function setResult(id,res){
   renderHistory();
 }
 let RES_MSG="";
-const canSetResult=r=>{const loc=histLoad().find(x=>x.id===r.id);return !!loc};
+const canSetResult=r=>!!tokenOf(r.id)||histLoad().some(x=>x.id===r.id);
 function resultsHTML(list){
   const played=list.filter(r=>r.mode!=="ai"&&(r.res==="win"||r.res==="loss"));
   if(!played.length) return `<div class="card"><h4>Реальные результаты</h4><p class="muted" style="margin:0">Отмечай «Победа» или «Поражение» на странице разбора драфта из «Турнира» или «All Pick». Здесь появится реальный винрейт, точность прогноза модели и герои, на которых вы реально выигрываете.</p></div>`;
@@ -1731,14 +1762,16 @@ function historyListHTML(){
     return `<button class="hitem" data-hid="${esc(r.id)}"><span><span class="ttl">${esc(r.name||"Драфт "+fmtDate(r.t))}</span><br><span class="when">${fmtDate(r.t)} · <span class="badge">${modeName(r.mode)}</span>${r.author?" · "+esc(r.author):""}</span></span>${fiveHTML(our,ourSide)}${fiveHTML(their,thSide)}<span class="prob ${pr>=0.5?"pos":"neg"}">${(pr*100).toFixed(0)}%${r.res?`<br><span class="badge ${r.res}">${r.res==="win"?"победа":"поражение"}</span>`:""}</span></button>`;
   }).join("");
   return `<div class="hist-head"><h2>История драфтов</h2>
-      ${dbOn()?`<select id="hSrc" aria-label="Чьи драфты"><option value="all">Все посетители</option><option value="mine">Только мои</option></select>`:""}
+      ${dbOn()?`<select id="hSrc" aria-label="Чьи драфты"><option value="all">Все посетители</option><option value="mine">Только наши</option></select>`:""}
       <select id="hFilter" aria-label="Фильтр"><option value="all">Все режимы</option><option value="ai">Тренировка</option><option value="manual">Турнир</option><option value="allpick">All Pick</option></select>
       ${dbOn()?`<input id="hNick" maxlength="32" placeholder="Твой ник для истории" value="${esc(getNick())}" style="background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 10px;width:180px">`:""}
     </div>
+    ${dbOn()&&!TEAM.code?`<p class="note" style="margin:0">Все драфты и так сохраняются в общую базу. Чтобы ещё и названия, результаты и фильтр «Только наши» были одинаковыми на всех ваших устройствах, подключите код команды во вкладке «Подготовка».</p>`:""}
     <p class="note" style="margin:0">${dbOn()
       ? "Каждый законченный драфт из «Тренировки» и «Турнира» автоматически попадает в общую базу, её видят все посетители сайта с любого компьютера. Слева пятёрка того, кто драфтил, справа соперник, справа прогноз модели в его пользу."
       : "Каждый законченный драфт из «Тренировки» и «Турнира» сохраняется здесь. Пока общая база не подключена, история хранится только в этом браузере. Слева наша пятёрка, справа соперник, справа прогноз модели за нас."}</p>
     ${dbOn()&&HREMOTE==null&&!HREMOTE_ERR?'<div class="muted">Загружаю общую историю…</div>':""}
+    ${HSYNC?`<div class="${/не удалось/.test(HSYNC)?"neg":"pos"}" style="font-size:13px">${esc(HSYNC)}</div>`:""}
     ${HREMOTE_ERR?`<div class="neg" style="font-size:13px">Общая база недоступна (${esc(HREMOTE_ERR)}), показываю драфты из этого браузера.</div>`:""}
     ${statsHTML(list)}
     <div class="hlist">${items||'<div class="card"><p class="muted" style="margin:0">Пока нет законченных драфтов. Доведи драфт до конца в «Тренировке», «Турнире» или «All Pick», и он появится здесь.</p></div>'}</div>`;
@@ -1754,7 +1787,7 @@ function historyDetailHTML(r){
     const row=(n,a,b)=>`<div class="row"><span>${n}</span><span><b>${a}</b> / ${b}</span></div>`;
     return `<div class="hist-head"><button class="btn" id="hBack">← К списку</button><h2 style="margin-left:4px">Разбор драфта</h2></div>
     <div class="card hdet">
-      <div class="hdet-top">${r.remote?`<span style="font-weight:600;font-size:16px;margin-right:auto">${esc(r.author?"Драфт: "+r.author:"Драфт")}</span>`:`<input id="hName" maxlength="80" value="${esc(r.name||"")}" placeholder="Название, например «Финал против Team X»">`}
+      <div class="hdet-top">${r.remote&&!isOwn(r.id)?`<span style="font-weight:600;font-size:16px;margin-right:auto">${esc(r.author?"Драфт: "+r.author:"Драфт")}</span>`:`<input id="hName" maxlength="80" value="${esc(r.name||"")}" placeholder="Название, например «Финал против Team X»">`}
         <span class="badge">${modeName(r.mode)}</span><span class="muted">${fmtDate(r.t)} · мы ${ourSide==="rad"?"Radiant":"Dire"}${AP()?"":", "+(S.playerFirst?"первый пик":"второй пик")}</span></div>
       <div class="timeline">${timelineHTML()}</div>
       ${AP()?`<div class="card"><h4>Баны</h4>${bansHTML(bansOf("N"))}</div>`:`<div class="ateams">
@@ -1801,9 +1834,9 @@ function renderHistory(){
     const nk=$("#hNick"); if(nk) nk.onchange=()=>{try{localStorage.setItem(NICK_KEY,nk.value.trim().slice(0,32))}catch(e){}};
   } else {
     $("#hBack").onclick=()=>{HSEL=null;HDEL=false;renderHistory()};
-    if($("#hName")) $("#hName").onchange=e=>{const l=histLoad(),k=l.findIndex(x=>x.id===r.id);if(k>=0){l[k].name=e.target.value.trim().slice(0,80);histSave(l)}};
+    if($("#hName")) $("#hName").onchange=e=>{const nm=e.target.value.trim().slice(0,80), l=histLoad(),k=l.findIndex(x=>x.id===r.id);if(k>=0){l[k].name=nm;histSave(l)} if(TEAM.code) ownDraft(r.id,{name:nm})};
     v.querySelectorAll("[data-res]").forEach(b=>b.onclick=()=>setResult(r.id,b.dataset.res||null));
-    if($("#hDelete")) $("#hDelete").onclick=()=>{ if(!HDEL){HDEL=true;renderHistory();return} histSave(histLoad().filter(x=>x.id!==r.id)); HSEL=null; HDEL=false; renderHistory(); };
+    if($("#hDelete")) $("#hDelete").onclick=()=>{ if(!HDEL){HDEL=true;renderHistory();return} histSave(histLoad().filter(x=>x.id!==r.id)); if(TEAM.code) ownDraft(r.id,{del:true}); HSEL=null; HDEL=false; renderHistory(); };
   }
 }
 function showView(v){
@@ -1913,7 +1946,9 @@ const rpc=(fn,body)=>fetch(DB.url.replace(/\/$/,"")+"/rest/v1/rpc/"+fn,{method:"
 let TEAM_SYNC="";
 async function teamRemoteSave(){
   if(!TEAM.code||!dbOn()) return;
-  try{ const r=await rpc("save_team",{p_code:TEAM.code,p_data:TEAM}); TEAM_SYNC=r.ok?"сохранено в базе":"база не сохранила ("+r.status+")"; }
+  try{ const cur=await teamRemoteLoad(TEAM.code).catch(()=>null);          // не затираем драфты, добавленные с другого устройства
+    if(cur&&cur.drafts){ const mine=teamDrafts(); Object.entries(cur.drafts).forEach(([id,v])=>{ mine[id]={...v,...(mine[id]||{})} }) }
+    const r=await rpc("save_team",{p_code:TEAM.code,p_data:TEAM}); TEAM_SYNC=r.ok?"сохранено в базе":"база не сохранила ("+r.status+")"; }
   catch(e){ TEAM_SYNC="нет связи с базой"; }
   const el=$("#teamSync"); if(el) el.textContent=TEAM_SYNC;
 }
@@ -2161,7 +2196,7 @@ $("#stratzRemove").onclick=()=>{try{localStorage.removeItem(SZ_KEY);localStorage
   location.reload()};
 loadHeroStats(false);
 loadStratz(false);
-if(TEAM.code&&dbOn()) teamRemoteLoad(TEAM.code).then(d=>{ if(d){ if(JSON.stringify({...d,code:TEAM.code})!==JSON.stringify(TEAM)) backupTeam("перед загрузкой из базы при открытии сайта"); TEAM={...d,code:TEAM.code};saveTeam(false);render();if(VIEW==="prep")renderPrep()} }).catch(()=>{});
+if(TEAM.code&&dbOn()) teamRemoteLoad(TEAM.code).then(d=>{ if(d){ if(TEAM.drafts){ const m={...(d.drafts||{})}; Object.entries(TEAM.drafts).forEach(([k,v])=>{m[k]={...(m[k]||{}),...v}}); d.drafts=m } if(JSON.stringify({...d,code:TEAM.code})!==JSON.stringify(TEAM)) backupTeam("перед загрузкой из базы при открытии сайта"); TEAM={...d,code:TEAM.code};saveTeam(false);render();if(VIEW==="prep")renderPrep();if(VIEW==="history")renderHistory()} syncOwnDrafts(); }).catch(()=>{});
 renderStratzPanel();
 if(location.hash==="#stratz") toggleStratz(true);
 
