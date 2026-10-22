@@ -808,7 +808,8 @@ function synRules(A,B){
 const sum=r=>r.reduce((s,x)=>s+x[0],0);
 const CTR = Array.from({length:N},()=>new Float32Array(N));
 const SYN = Array.from({length:N},()=>new Float32Array(N));
-for(let i=0;i<N;i++)for(let j=0;j<N;j++){ if(i===j)continue; CTR[i][j]=sum(ctrRules(HEROES[i],HEROES[j])); SYN[i][j]=sum(synRules(HEROES[i],HEROES[j])); }
+// встроенные правила — только запасной вариант, если по паре нет статистики (на реальных матчах они ничего не добавили к данным STRATZ)
+for(let i=0;i<N;i++)for(let j=0;j<N;j++){ if(i===j)continue; CTR[i][j]=sum(ctrRules(HEROES[i],HEROES[j]))*0.3; SYN[i][j]=sum(synRules(HEROES[i],HEROES[j]))*0.1; }
 const CTR_R = CTR.map(r=>Float32Array.from(r));
 const SYN_R = SYN.map(r=>Float32Array.from(r));
 
@@ -870,6 +871,24 @@ async function loadHeroStats(force){
   renderData(); render();
 }
 function allPicked(){const r=new Set();Object.entries(STATES).forEach(([m,st])=>{const o=ordOf(m,st);st.draft.forEach((v,i)=>{if(v!=null&&v>=0&&o[i]&&o[i].act==="P")r.add(v)})});return [...r]}
+/* насколько общая сила героев (винрейт) переносится на конкретные пары — считается по самим данным STRATZ.
+   Без этой поправки у сильных героев занижались контрпики и синергии. */
+const SZ_K={vs:0.7,with:0.7};
+/* Веса модели подобраны по 7 903 реальным матчам Divine–Immortal с OpenDota (22.10.2026, игры дольше 15 минут):
+   на одной половине матчей подбирали, на другой проверяли. Точность 56–57%, прогнозы откалиброваны:
+   матчи, где модель даёт 60%, и выигрываются примерно в 60% случаев.
+   Единица оценки — примерно 1% шанса на победу. Проверки состава (контроль, пуш и т.п.) и встроенные правила
+   на реальных играх ничего не предсказали, поэтому в прогноз не входят. */
+const MODEL={str:0.65, vs:0.26, with:0.077, role:1.0, side:3.5, prior:400, scale:25};
+const heroStr=id=>{const h=HEROES[id]; return (h.sz||h.live) ? (baseWr(id)-0.5)*100*MODEL.str : h.meta*0.5};   // сила героя по винрейту
+function szCalib(){
+  const fit=pts=>{ if(pts.length<500) return null; let sx=0,sy=0,sxx=0,sxy=0; pts.forEach(([x,y])=>{sx+=x;sy+=y;sxx+=x*x;sxy+=x*y}); const n=pts.length, k=(n*sxy-sx*sy)/(n*sxx-sx*sx); return isFinite(k)?Math.max(0.3,Math.min(1.2,k)):null };
+  const vs=[],wi=[];
+  for(let a=0;a<N;a++)for(let b=0;b<N;b++){ if(a===b) continue;
+    const v=SZ.vs[a]&&SZ.vs[a][b]; if(v&&v.g>=300) vs.push([baseWr(a)-baseWr(b),v.w/v.g-0.5]);
+    const w=a<b&&SZ.with[a]&&SZ.with[a][b]; if(w&&w.g>=300) wi.push([baseWr(a)+baseWr(b)-1,w.w/w.g-0.5]); }
+  const kv=fit(vs), kw=fit(wi); if(kv!=null) SZ_K.vs=kv; if(kw!=null) SZ_K.with=kw;
+}
 function dataAdv(a,b){ // насколько a выигрывает у b сверх ожидаемого по общей силе героев, в п.п. (STRATZ приоритетнее)
   let w,g,src;
   const sa=SZ.vs[a]&&SZ.vs[a][b], sb=SZ.vs[b]&&SZ.vs[b][a];
@@ -877,25 +896,23 @@ function dataAdv(a,b){ // насколько a выигрывает у b све�
   if(sa&&sa.g){w=sa.w;g=sa.g;src="STRATZ"} else if(sb&&sb.g){w=sb.g-sb.w;g=sb.g;src="STRATZ"}
   else if(ma&&ma.g){w=ma.w;g=ma.g;src="OpenDota"} else if(mb&&mb.g){w=mb.g-mb.w;g=mb.g;src="OpenDota"} else return null;
   // общая сила героя уже учтена в мете — здесь оставляем только то, что зависит от конкретного соперника
-  const exp=Math.max(0.3,Math.min(0.7,0.5+baseWr(a)-baseWr(b)));
-  const sh=(w+15*exp)/(g+15);
+  const exp=Math.max(0.3,Math.min(0.7,0.5+SZ_K.vs*(baseWr(a)-baseWr(b))));
+  const sh=(w+MODEL.prior*exp)/(g+MODEL.prior);           // сильное сглаживание: при ~400 играх половина разницы — случайность
   return {pp:Math.max(-12,Math.min(12,(sh-exp)*100)),raw:w/g*100,exp:exp*100,g,src};
 }
 function withAdv(a,b){ // насколько пара a+b выигрывает чаще, чем ожидается по силе героев
   const x=(SZ.with[a]&&SZ.with[a][b])||(SZ.with[b]&&SZ.with[b][a]); if(!x||!x.g) return null;
-  const base=Math.max(0.3,Math.min(0.7,baseWr(a)+baseWr(b)-0.5));   // ожидание для пары: сила обоих героев складывается
-  const sh=(x.w+20*base)/(x.g+20);
+  const base=Math.max(0.3,Math.min(0.7,0.5+SZ_K.with*(baseWr(a)+baseWr(b)-1)));   // ожидание для пары: сила обоих героев складывается
+  const sh=(x.w+MODEL.prior*base)/(x.g+MODEL.prior);
   return {pp:Math.max(-10,Math.min(10,(sh-base)*100)),raw:x.w/x.g*100,g:x.g};
 }
 function updateSyn(a,b){
   const d=withAdv(a,b); if(!d){SYN[a][b]=SYN_R[a][b];SYN[b][a]=SYN_R[b][a];return}
-  const wd=0.85*d.g/(d.g+40), v=d.pp*0.3;
-  SYN[a][b]=(1-wd)*SYN_R[a][b]+wd*v; SYN[b][a]=(1-wd)*SYN_R[b][a]+wd*v;
+  SYN[a][b]=SYN[b][a]=d.pp*MODEL.with;
 }
 function updatePair(a,b){
   const d=dataAdv(a,b); if(!d){CTR[a][b]=CTR_R[a][b];return}
-  const wd=0.85*d.g/(d.g+20);
-  CTR[a][b]=(1-wd)*CTR_R[a][b]+wd*Math.max(0,d.pp)*0.25;
+  CTR[a][b]=Math.max(0,d.pp)*MODEL.vs;              // вторая половина пары (минус) достаётся сопернику в CTR[b][a]
 }
 async function loadMatchups(id,force){
   const h=HEROES[id];
@@ -956,6 +973,7 @@ async function loadStratz(force){
       Object.entries(PRE.sz.mu||{}).forEach(([sid,x])=>{const id=SZ.id[sid]; if(id==null) return; const vs={},wi={};
         x.vs.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) vs[j]={g,w}}); x.with.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) wi[j]={g,w}});
         SZ.vs[id]=vs; SZ.with[id]=wi});
+      szCalib();
       for(let i=0;i<N;i++) for(let j=0;j<N;j++) if(i!==j){updatePair(i,j); if(i<j) updateSyn(i,j)}
       renderData(); render(); renderStratzPanel(); return;
     }catch(e){ SZ.pre=false }
@@ -1084,7 +1102,7 @@ function poolThreat(x){
   TEAM.players.forEach(p=>{
     if(!open.has(+p.pos)) return;                      // позиция игрока уже закрыта — его пул не важен
     p.heroes.forEach(n=>{const h=BYNAME[n]; if(h==null||h===x||un.has(h)) return;
-      const c=CTR[x][h]; if(c<0.5) return;
+      const c=CTR[x][h]; if(c<0.4) return;
       const w=(p.top||[]).includes(n)?1:0.55, k=c*w;
       if(!best[h]||best[h].k<k) best[h]={h,c,k,top:w===1,nick:p.nick||"поз. "+p.pos};
     });
@@ -1100,8 +1118,8 @@ const threatText=t=>"мешает: "+t.list.slice(0,3).map(r=>HEROES[r.h].ab+(r.
 function poolClash(id){
   const allies=picks("P").filter(a=>a!==id); if(!allies.length) return null;
   const pairs=allies.map(a=>[a,(SYN[id][a]+SYN[a][id])/2]), total=pairs.reduce((s,x)=>s+x[1],0), worst=Math.min(...pairs.map(x=>x[1]));
-  if(worst>-0.4&&total>-0.6) return null;
-  return pairs.filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]).map(x=>HEROES[x[0]].name);
+  if(worst>-0.25&&total>-0.4) return null;
+  return pairs.filter(x=>x[1]<=-0.2).sort((a,b)=>a[1]-b[1]).map(x=>HEROES[x[0]].name);
 }
 let WARM_BUSY=false; const WARM_TRIED=new Set();
 async function warmPool(){                             // матчапы героев пула нужны, чтобы видеть их контрпики
@@ -1166,17 +1184,16 @@ function needBonus(id,allies,enemies){
 function evalHero(id,team){
   const allies=picks(team),enemies=picks(other(team)),h=HEROES[id];
   const before=bestAssign(allies).score, after=bestAssign([...allies,id]).score;
-  const d=after-before; const role=d*0.4;
+  const d=after-before; const role=d*MODEL.role;
   const syn=allies.reduce((s,a)=>s+(SYN[id][a]+SYN[a][id])/2,0);
   const ctr=enemies.reduce((s,e)=>s+CTR[id][e],0);
   const thr=enemies.reduce((s,e)=>s+CTR[e][id],0);
   const need=needBonus(id,allies,enemies);
   const cf = team==="P" ? poolBonus(id) : scoutBonus(id);
-  // та же формула, что у итогового прогноза: насколько этот пик сдвигает разницу оценок пятёрок
-  const en=profile(enemies), comp=compOf(profile([...allies,id]),en).comp-compOf(profile(allies),en).comp;
-  const enComp=compOf(en,profile([...allies,id])).comp-compOf(en,profile(allies)).comp;   // например, наш инвиз требует от них детект
-  const total=h.meta*0.6+role+syn+ctr*0.9-thr*0.9+comp-enComp+cf.v;
-  return {total,meta:h.meta,role,syn,ctr,thr,need,offrole:d<0,comfort:cf.v,comfortWho:cf.who};
+  // та же формула, что у итогового прогноза: насколько этот пик сдвигает разницу оценок пятёрок (в % шанса)
+  const str=heroStr(id);
+  const total=str+role+syn+ctr-thr+cf.v;
+  return {total,meta:h.meta,str,role,syn,ctr,thr,need,offrole:d<0,comfort:cf.v,comfortWho:cf.who};
 }
 const banValue=(id,team)=>evalHero(id,other(team)).total;
 /* какие позиции у команды ещё свободны и встаёт ли герой на одну из них */
@@ -1200,7 +1217,7 @@ function shortReason(id,team,act){
     const opp=other(team),e=evalHero(id,opp),bits=[],us=team==="P";
     if(us){const ps=protectScore(id); if(ps.w>=0.35) bits.push(threatText(ps.t))}
     if(e.comfort>0.3) bits.push(us?"у них: "+e.comfortWho:"наш пул: "+e.comfortWho);
-    if(e.syn>1) bits.push(us?"связка у соперника":"наша связка");
+    if(e.syn>0.4) bits.push(us?"связка у соперника":"наша связка");
     if(e.ctr>1) bits.push(us?"контрит "+L().ours:"контрит их пики");
     if(e.meta>1.2) bits.push("сильная мета");
     if(e.need.length) bits.push(us?"закрывает дыру соперника":"закрывает нашу дыру");
@@ -1210,9 +1227,9 @@ function shortReason(id,team,act){
   const allies=picks(team),enemies=picks(other(team));
   if(e.comfort>0.3) bits.push(team==="P"?"пул: "+e.comfortWho:"играет: "+e.comfortWho);
   const bs=allies.map(a=>[a,SYN[id][a]]).sort((x,y)=>y[1]-x[1])[0];
-  if(bs&&bs[1]>=0.8) bits.push("с "+HEROES[bs[0]].ab);
+  if(bs&&bs[1]>=0.2) bits.push("с "+HEROES[bs[0]].ab);
   const bc=enemies.map(x=>[x,CTR[id][x]]).sort((x,y)=>y[1]-x[1])[0];
-  if(bc&&bc[1]>=0.8) bits.push("контрит "+HEROES[bc[0]].ab);
+  if(bc&&bc[1]>=0.6) bits.push("контрит "+HEROES[bc[0]].ab);
   if(e.need.length) bits.push(e.need[0][1]);
   if(e.meta>1.2&&bits.length<2) bits.push("сильная мета");
   if(!bits.length) bits.push("позиции: "+HEROES[id].pos.join("/"));
@@ -1428,7 +1445,7 @@ function renderDetail(){
     ? {syn:"С "+ourName, ctr:"Контрит врагов", thr:"Опасны для него"}
     : {syn:"С "+ourName, ctr:"Контрит "+L().ours, thr:(MAN()?"Наши":"Твои")+", кто его контрит"};
   const reasons=(rs)=>rs.sort((a,b)=>b[0]-a[0]).map(x=>x[1]).join(", ");
-  const synR=me.map(a=>[a,SYN[id][a],[synNote(id,a),reasons(synRules(h,HEROES[a]))].filter(Boolean).join("; ")]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
+  const synR=me.map(a=>[a,SYN[id][a],[synNote(id,a),reasons(synRules(h,HEROES[a]))].filter(Boolean).join("; ")]).filter(x=>Math.abs(x[1])>=0.15).sort((a,b)=>b[1]-a[1]);
   const withData=(r,a,b)=>[dataNote(a,b),r].filter(Boolean).join("; ");
   const ctrR=en.map(e=>[e,CTR[id][e],withData(reasons(ctrRules(h,HEROES[e])),id,e)]).filter(x=>x[1]>=0.3).sort((a,b)=>b[1]-a[1]);
   const thrR=en.map(e=>[e,-CTR[e][id],withData(reasons(ctrRules(HEROES[e],h)),e,id)]).filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]);
@@ -1443,7 +1460,7 @@ function renderDetail(){
   </div>
   ${banView&&actor==="P"?(()=>{const t=poolThreat(id); return t.list.length?`<div style="font-size:13px"><span style="color:var(--gold)">Мешает нашему пулу:</span> ${t.list.map(r=>esc(HEROES[r.h].name+(r.top?" ★":"")+" ("+r.nick+")")).join(", ")}</div>`:""})():""}
   ${banView?`<div class="muted" style="font-size:13px">Сейчас бан — показано, насколько герой усилил бы ${persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютер")}.</div>`:""}
-  <div class="score">${banView?"ценность бана":"для "+(persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютера"))} <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
+  <div class="score">${banView?"ценность бана":"для "+(persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютера"))} <b>${eP.total.toFixed(1)}</b> · сила ${fmt(eP.str)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.comfort?" · пул "+fmt(eP.comfort):""}</div>
   <div class="score">${banView?"сам бы его взял":"для другой стороны"} <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · не по ролям":""}</div>
   <div class="actions">${un?`<span class="muted">Герой уже занят или забанен</span>`:myTurn?`<button class="btn primary" id="confirmBtn">${act==="B"?"Забанить":"Пикнуть"} ${esc(h.ab)}${forOpp?" за соперника":""}</button>`:`<span class="muted">Сейчас ход компьютера</span>`}</div>`;
   const cb=$("#confirmBtn"); if(cb) cb.onclick=playerConfirm;
@@ -1566,13 +1583,13 @@ function logHTML(){
 function teamScore(team){
   const ids=picks(team),en=picks(other(team)),a=bestAssign(ids),p=profile(ids),pe=profile(en);
   let syn=0;const synPairs=[];
-  for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){const v=(SYN[ids[i]][ids[j]]+SYN[ids[j]][ids[i]])/2;syn+=v;if(v>=0.8||v<=-0.8)synPairs.push([ids[i],ids[j],v])}
+  for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){const v=(SYN[ids[i]][ids[j]]+SYN[ids[j]][ids[i]])/2;syn+=v;if(v>=0.25||v<=-0.25)synPairs.push([ids[i],ids[j],v])}
   let ctr=0;const ctrPairs=[];
-  ids.forEach(x=>en.forEach(y=>{const v=CTR[x][y];ctr+=v;if(v>=1.2)ctrPairs.push([x,y,v])}));
-  const meta=ids.reduce((s,id)=>s+HEROES[id].meta,0);
-  const {checks,comp}=compOf(p,pe);
-  const role=(a.score-12)*0.4;
-  return {total:meta*0.6+syn+ctr*0.9+comp+role,meta,syn,ctr,comp,role,checks,synPairs,ctrPairs,assign:a,ids};
+  ids.forEach(x=>en.forEach(y=>{const v=CTR[x][y];ctr+=v;if(v>=0.8)ctrPairs.push([x,y,v])}));
+  const meta=ids.reduce((s,id)=>s+HEROES[id].meta,0), str=ids.reduce((s,id)=>s+heroStr(id),0);
+  const {checks,comp}=compOf(p,pe);               // состав — для справки, в прогноз не входит
+  const role=(a.score-12)*MODEL.role;
+  return {total:str+syn+ctr+role,str,meta,syn,ctr,comp,role,checks,synPairs,ctrPairs,assign:a,ids};
 }
 function compOf(p,pe){                             // проверки состава: что закрыто, что нет
   const checks=[
@@ -1589,31 +1606,32 @@ function renderAnalysis(){
   if(!done()){w.hidden=true;w.style.display="none";w.innerHTML="";return}
   w.hidden=false; w.style.display=""; w.innerHTML=analysisHTML();
 }
-const WP_SCALE=18;   // откалибровано по 200 драфтам ИИ против ИИ: обычная разница даёт 55–60%, крайние случаи — около 75%
-function winProb(){const P=teamScore("P"),A=teamScore("A");const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;const pr=1/(1+Math.exp(-(radT.total-dirT.total)/WP_SCALE));return sideOf("P")==="rad"?pr:1-pr}
+const radProb=(radT,dirT)=>1/(1+Math.exp(-(radT.total-dirT.total+MODEL.side)/MODEL.scale));   // у Radiant небольшое преимущество стороны (~53%)
+function winProb(){const P=teamScore("P"),A=teamScore("A");const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;const pr=radProb(radT,dirT);return sideOf("P")==="rad"?pr:1-pr}
 function analysisHTML(){
   const P=teamScore("P"),A=teamScore("A");
   const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;
-  const pr=1/(1+Math.exp(-(radT.total-dirT.total)/WP_SCALE));
+  const pr=radProb(radT,dirT);
   const card=(t,label)=>{
     const order=t.ids.map((id,k)=>[t.assign.map[k],id]).sort((a,b)=>a[0]-b[0]);
     return `<div class="card"><h4>${label}</h4>
     <div class="lineup">${order.map(([p,id])=>`<div><span class="p">${p}</span><span>${esc(HEROES[id].name)}</span>${fit(HEROES[id],p)<0?'<span class="neg" style="font-size:12px">вне роли</span>':""}</div>`).join("")}</div>
-    <div class="score">итог <b>${t.total.toFixed(1)}</b> · мета ${fmt(t.meta*0.6)} · синергия ${fmt(t.syn)} · контрпики ${fmt(t.ctr*0.9)} · состав ${fmt(t.comp)} · роли ${fmt(t.role)}</div>
+    <div class="score">итог <b>${t.total.toFixed(1)}</b> · сила героев ${fmt(t.str)} · матчапы ${fmt(t.ctr)} · синергия ${fmt(t.syn)} · роли ${fmt(t.role)}</div>
+    <div class="sub">Состав (для справки, на прогноз не влияет)</div>
     <div class="check">${t.checks.map(([n,ok])=>`<span class="${ok?"pos":"neg"}">${ok?"✓":"✗"}</span><span>${n}</span>`).join("")}</div>
     ${t.synPairs.length?`<div class="sub">Связки</div><div class="muted">${t.synPairs.sort((a,b)=>b[2]-a[2]).map(([a,b,v])=>`<span class="${v>0?"pos":"neg"}">${esc(HEROES[a].ab)} + ${esc(HEROES[b].ab)}</span>`).join(", ")}</div>`:""}
     ${t.ctrPairs.length?`<div class="sub">Ключевые контрпики</div><div class="muted">${t.ctrPairs.sort((a,b)=>b[2]-a[2]).slice(0,6).map(([a,b])=>`${esc(HEROES[a].ab)} → ${esc(HEROES[b].ab)}`).join(", ")}</div>`:""}
     </div>`};
   const graded=S.log.filter(e=>e.g);const avg=graded.length?graded.reduce((s,e)=>s+e.g.rank,0)/graded.length:0;
   const me=teamScore("P"), op=teamScore("A");
-  const parts=[["мета",me.meta*0.6-op.meta*0.6],["синергия",me.syn-op.syn],["контрпики",me.ctr*0.9-op.ctr*0.9],["состав",me.comp-op.comp],["роли",me.role-op.role]];
+  const parts=[["сила героев",me.str-op.str],["матчапы",me.ctr-op.ctr],["синергия",me.syn-op.syn],["роли",me.role-op.role],["сторона",sideOf("P")==="rad"?MODEL.side:-MODEL.side]];
   const plus=parts.filter(x=>x[1]>=1).sort((a,b)=>b[1]-a[1]), minus=parts.filter(x=>x[1]<=-1).sort((a,b)=>a[1]-b[1]);
   const why=`${minus.length?`Уступаем: ${minus.map(([n,v])=>n+" "+v.toFixed(1)).join(", ")}. `:""}${plus.length?`Выигрываем: ${plus.map(([n,v])=>n+" +"+v.toFixed(1)).join(", ")}.`:""}`;
   return `<div class="analysis"><div class="card verdict"><h4>Прогноз модели</h4>
     <div class="wbar"><div class="r" style="width:${(pr*100).toFixed(0)}%">Radiant ${(pr*100).toFixed(0)}%</div><div class="d" style="width:${(100-pr*100).toFixed(0)}%">${(100-pr*100).toFixed(0)}% Dire</div></div>
     <div class="muted">${MAN()?"Наша":"Твоя"} сторона: ${sideOf("P")==="rad"?"Radiant":"Dire"}. Средний ранг ${MAN()?"ходов (обеих команд)":"твоих ходов"} по модели: ${avg?avg.toFixed(1):"—"} (1 = лучший вариант).</div>
     ${why?`<div style="margin-top:6px">${why}</div>`:""}
-    <div class="muted" style="font-size:13px;margin-top:6px">Ранг хода показывает, насколько выбор был хорош среди героев, доступных в тот момент. Прогноз сравнивает итоговые пятёрки целиком. Если соперник тоже ходил сильно, забрал более сильных по мете героев или у него последний пик, можно сделать все ходы хорошо и всё равно уступать.</div></div>
+    <div class="muted" style="font-size:13px;margin-top:6px">Числа — примерно проценты шанса на победу. Модель проверена на 7 903 реальных матчах Divine–Immortal: угадывает исход по одному драфту в 56–57% случаев, остальное решает игра. Ранг хода показывает, насколько выбор был хорош среди героев, доступных в тот момент. Прогноз сравнивает итоговые пятёрки целиком: если соперник тоже ходил сильно или у него последний пик, можно сделать все ходы хорошо и всё равно немного уступать.</div></div>
     <div class="ateams">${card(radT,"Radiant"+(sideOf("P")==="rad"?(MAN()?" · мы":" · ты"):""))}${card(dirT,"Dire"+(sideOf("P")==="dire"?(MAN()?" · мы":" · ты"):""))}</div></div>`;
 }
 
@@ -1854,7 +1872,7 @@ function historyDetailHTML(r){
       </div>
       <div class="rel" style="max-width:520px">
         <div class="sub">Мы / соперник</div>
-        ${row("Мета",fmt(P.meta*0.6),fmt(A.meta*0.6))}${row("Синергия",fmt(P.syn),fmt(A.syn))}${row("Контрпики",fmt(P.ctr*0.9),fmt(A.ctr*0.9))}${row("Состав",fmt(P.comp),fmt(A.comp))}${row("Роли",fmt(P.role),fmt(A.role))}
+        ${row("Сила героев",fmt(P.str),fmt(A.str))}${row("Матчапы",fmt(P.ctr),fmt(A.ctr))}${row("Синергия",fmt(P.syn),fmt(A.syn))}${row("Роли",fmt(P.role),fmt(A.role))}
       </div>
       ${worst.length?`<div class="sub">Где можно было лучше</div><div class="muted">${worst.map(e=>`ход ${e.i+1}: ${e.act==="B"?"бан":"пик"} ${esc(HEROES[e.id].name)} — #${e.g.rank}${e.g.best!=null?", модель советовала "+esc(HEROES[e.g.best].name):""}`).join("<br>")}</div>`:""}
     </div>
@@ -2025,7 +2043,7 @@ function chipHTML(name,st,del){
 function banTargetsVsUs(){
   const rows=[];
   TEAM.players.forEach(p=>p.heroes.forEach(n=>{const id=BYNAME[n]; if(id==null) return;
-    rows.push({id,nick:p.nick||"поз. "+p.pos,v:HEROES[id].meta*0.9+0.8+((p.top||[]).includes(n)?0.6:0)})}));
+    rows.push({id,nick:p.nick||"поз. "+p.pos,v:heroStr(id)+0.8+((p.top||[]).includes(n)?0.6:0)})}));
   return rows.sort((a,b)=>b.v-a.v).slice(0,8);
 }
 function banTargetsVsThem(o){
