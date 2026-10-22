@@ -1022,7 +1022,7 @@ function bans(team){const r=[];ORD().forEach((o,i)=>{if(o.act==="B"&&teamOfStep(
 function unavailable(){return new Set(S.draft.filter(x=>x!=null&&x>=0))}
 
 /* ===== КОМАНДА И РАЗВЕДКА ===== */
-const TEAM_KEY="cm_team", USE_KEY="cm_use";
+const TEAM_KEY="cm_team", USE_KEY="cm_use", SHARED_CODE="aqueer-shared-team";
 const emptyPlayer=pos=>({nick:"",acc:"",pos,heroes:[],stats:{}});
 function loadTeam(){try{const t=JSON.parse(localStorage.getItem(TEAM_KEY));if(t&&Array.isArray(t.players))return t}catch(e){}
   return {code:"",name:"",players:[1,2,3,4,5].map(emptyPlayer),opps:[],activeOpp:null}}
@@ -1032,7 +1032,7 @@ const saveUse=()=>{try{localStorage.setItem(USE_KEY,JSON.stringify(USE))}catch(e
 let teamSaveTimer=null;
 function saveTeam(remote=true){
   try{localStorage.setItem(TEAM_KEY,JSON.stringify(TEAM))}catch(e){}
-  if(remote&&TEAM.code&&typeof dbOn==="function"&&dbOn()){clearTimeout(teamSaveTimer);teamSaveTimer=setTimeout(()=>teamRemoteSave(),1200)}
+  if(remote&&TEAM.code&&typeof dbOn==="function"&&dbOn()){clearTimeout(teamSaveTimer);teamSaveTimer=setTimeout(()=>{teamSaveTimer=null;teamRemoteSave()},1200)}
 }
 /* резервные копии команды: делаются перед любой перезаписью, хранятся в этом браузере */
 const TEAM_BK_KEY="cm_team_backups";
@@ -1521,7 +1521,7 @@ function renderTeamPool(){
       <input data-tadd="${k}" list="poolHeroNames" placeholder="+ герой" aria-label="Добавить героя">
     </div>`).join("");
   el.innerHTML=`<div class="tp-head"><h4>Пул команды</h4><span class="muted" style="font-size:12px">${total?`героев: ${total}`:"пока пусто"}${USE.pool?"":" · галочка «Наш пул» выключена — подсказки его не учитывают"}</span><span class="muted" style="font-size:12px;color:var(--gold)">${esc(POOL_MSG)}</span><span style="flex:1"></span><button class="btn" id="tpToggle">${POOL_OPEN?"Свернуть":"Развернуть"}</button></div>
-  ${POOL_OPEN?`<p class="muted" style="margin:4px 0 0;font-size:12px">Герои, на которых каждый из вас уверенно играет. Подсказки по нашим пикам ставят их первыми в колонке позиции игрока, ★ — коронные, у них самый высокий приоритет. В сетке героев они отмечены жёлтой точкой. Добавить: перетащи портрет на строку игрока или впиши имя. ${TEAM.code?"Пул общий для команды по коду.":"Чтобы пул видел друг, создай код команды во вкладке «Подготовка»."}</p>
+  ${POOL_OPEN?`<p class="muted" style="margin:4px 0 0;font-size:12px">Герои, на которых каждый из вас уверенно играет. Подсказки по нашим пикам ставят их первыми в колонке позиции игрока, ★ — коронные, у них самый высокий приоритет. В сетке героев они отмечены жёлтой точкой. Добавить: перетащи портрет на строку игрока или впиши имя. Пул общий: изменения сразу видны на всех устройствах.</p>
   <datalist id="poolHeroNames">${heroNameOptions()}</datalist>${rows}`:""}`;
   $("#tpToggle").onclick=()=>{POOL_OPEN=!POOL_OPEN;try{localStorage.setItem("cm_pool_open",POOL_OPEN?"1":"0")}catch(e){}renderTeamPool()};
   el.querySelectorAll("[data-tpos]").forEach(s=>s.onchange=()=>{TEAM.players[+s.dataset.tpos].pos=+s.value;saveTeam();render()});
@@ -1766,7 +1766,7 @@ function historyListHTML(){
       <select id="hFilter" aria-label="Фильтр"><option value="all">Все режимы</option><option value="ai">Тренировка</option><option value="manual">Турнир</option><option value="allpick">All Pick</option></select>
       ${dbOn()?`<input id="hNick" maxlength="32" placeholder="Твой ник для истории" value="${esc(getNick())}" style="background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 10px;width:180px">`:""}
     </div>
-    ${dbOn()&&!TEAM.code?`<p class="note" style="margin:0">Все драфты и так сохраняются в общую базу. Чтобы ещё и названия, результаты и фильтр «Только наши» были одинаковыми на всех ваших устройствах, подключите код команды во вкладке «Подготовка».</p>`:""}
+
     <p class="note" style="margin:0">${dbOn()
       ? "Каждый законченный драфт из «Тренировки» и «Турнира» автоматически попадает в общую базу, её видят все посетители сайта с любого компьютера. Слева пятёрка того, кто драфтил, справа соперник, справа прогноз модели в его пользу."
       : "Каждый законченный драфт из «Тренировки» и «Турнира» сохраняется здесь. Пока общая база не подключена, история хранится только в этом браузере. Слева наша пятёрка, справа соперник, справа прогноз модели за нас."}</p>
@@ -2004,13 +2004,8 @@ function renderPrep(){
     <div class="card">
       <h4>Наша команда</h4>
       <div class="prow-in"><input id="teamName" value="${esc(TEAM.name)}" placeholder="Название команды" style="flex:1 1 200px"></div>
-      <div class="prow-in">
-        <span class="muted" style="font-size:13px">Код команды:</span>
-        <input id="teamCode" value="${esc(TEAM.code)}" placeholder="нет кода" style="width:150px;font-family:var(--f-mono)">
-        ${TEAM.code?`<button class="btn" id="teamLoad">Загрузить по коду</button>`:`<button class="btn" id="teamNewCode"${dbOn()?"":" disabled"}>Создать код</button><button class="btn" id="teamLoad">Подключиться по коду</button>`}
-        <span class="muted" id="teamSync" style="font-size:12px">${esc(TEAM_SYNC)}</span>
-      </div>
-      <p class="muted" style="margin:0;font-size:12px">По коду команда хранится в общей базе: друг вводит тот же код и видит тот же пул. Код знаете только вы.</p>
+      <div class="prow-in"><button class="btn" id="teamLoad">Обновить из базы</button><span class="muted" id="teamSync" style="font-size:12px">${esc(TEAM_SYNC)}</span></div>
+      <p class="muted" style="margin:0;font-size:12px">Команда и пул общие для всех: изменения сохраняются в базу сами и видны на любом устройстве, где открыт сайт.</p>
       ${TEAM.players.map(playerRow).join("")}
       <p class="note" style="margin:0">«Подтянуть героев» берёт из OpenDota героев игрока за последние 180 дней (больше 3 игр). В профиле Dota должна быть включена настройка «Открыть общедоступные данные матчей». Лишних можно убрать крестиком, нужных добавить вручную.</p>
     </div>
@@ -2044,14 +2039,7 @@ function wirePrep(){
     saveTeam(); TEAM_SYNC="копия восстановлена"+(TEAM.code&&dbOn()?" и сохраняется в базу":""); renderPrep(); render();
   });
   $("#teamName").onchange=e=>{TEAM.name=e.target.value.trim().slice(0,60);saveTeam()};
-  const nc=$("#teamNewCode"); if(nc) nc.onclick=()=>{TEAM.code=newTeamCode();saveTeam();teamRemoteSave().then(renderPrep);renderPrep()};
-  $("#teamLoad").onclick=async()=>{
-    const code=$("#teamCode").value.trim(); if(!code){TEAM_SYNC="введи код";renderPrep();return}
-    if(!dbOn()){TEAM_SYNC="общая база не подключена";renderPrep();return}
-    try{ const d=await teamRemoteLoad(code); if(d){ if(JSON.stringify({...d,code})!==JSON.stringify(TEAM)) backupTeam("перед загрузкой из базы"); TEAM={...d,code};saveTeam(false);TEAM_SYNC="загружено из базы"} else {TEAM.code=code;saveTeam();TEAM_SYNC="команды с таким кодом нет — сохраню текущую под этим кодом"} }
-    catch(e){TEAM_SYNC=e.message}
-    renderPrep(); render();
-  };
+  $("#teamLoad").onclick=()=>{TEAM_SYNC="загружаю…";renderPrep();teamPull(true)};
   v.querySelectorAll(".player[data-k]").forEach(row=>{
     const k=+row.dataset.k, p=TEAM.players[k];
     row.querySelector('[data-f="nick"]').onchange=e=>{p.nick=e.target.value.trim().slice(0,24);saveTeam()};
@@ -2196,7 +2184,31 @@ $("#stratzRemove").onclick=()=>{try{localStorage.removeItem(SZ_KEY);localStorage
   location.reload()};
 loadHeroStats(false);
 loadStratz(false);
-if(TEAM.code&&dbOn()) teamRemoteLoad(TEAM.code).then(d=>{ if(d){ if(TEAM.drafts){ const m={...(d.drafts||{})}; Object.entries(TEAM.drafts).forEach(([k,v])=>{m[k]={...(m[k]||{}),...v}}); d.drafts=m } if(JSON.stringify({...d,code:TEAM.code})!==JSON.stringify(TEAM)) backupTeam("перед загрузкой из базы при открытии сайта"); TEAM={...d,code:TEAM.code};saveTeam(false);render();if(VIEW==="prep")renderPrep();if(VIEW==="history")renderHistory()} syncOwnDrafts(); }).catch(()=>{});
+/* одна общая команда на всех: без кодов, кто открыл сайт — видит и может менять пул */
+const mergeDrafts=(a,b)=>{const m={...(a||{})}; Object.entries(b||{}).forEach(([k,v])=>{m[k]={...(m[k]||{}),...v}}); return m};
+function teamApply(d,why){
+  d={...d,code:SHARED_CODE,drafts:mergeDrafts(d.drafts,TEAM.drafts)};
+  if(JSON.stringify(d)===JSON.stringify(TEAM)) return false;
+  backupTeam(why); TEAM=d; saveTeam(false); render(); if(VIEW==="prep")renderPrep(); if(VIEW==="history")renderHistory();
+  return true;
+}
+async function teamPull(manual){
+  if(!dbOn()) return;
+  try{
+    // устройства со старым кодом команды один раз переносят свой пул в общую запись
+    if(TEAM.code&&TEAM.code!==SHARED_CODE){
+      const old=await teamRemoteLoad(TEAM.code).catch(()=>null); if(old) teamApply({...old,drafts:mergeDrafts(old.drafts,TEAM.drafts)},"перед переходом на общую команду");
+    }
+    const d=await teamRemoteLoad(SHARED_CODE);
+    if(d&&teamHasData(d)){ teamApply(d,"перед загрузкой общей команды"); TEAM_SYNC="загружено из базы" }
+    else if(teamHasData(TEAM)){ TEAM.code=SHARED_CODE; saveTeam(false); await teamRemoteSave(); TEAM_SYNC="пул перенесён в общую базу" }
+    else { TEAM.code=SHARED_CODE; saveTeam(false) }
+    syncOwnDrafts();
+  }catch(e){ if(manual) TEAM_SYNC=e.message||"нет связи с базой" }
+  if(VIEW==="prep") renderPrep();
+}
+teamPull(false);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&!teamSaveTimer) teamPull(false) });
 renderStratzPanel();
 if(location.hash==="#stratz") toggleStratz(true);
 
