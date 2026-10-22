@@ -21,6 +21,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Не дать базе Supabase уснуть
+        # бесплатный проект Supabase ставится на паузу после недели без запросов;
+        # этот запрос раз в 8 часов держит его активным (ключ публичный — он и так есть на сайте)
+        continue-on-error: true
+        run: |
+          curl -fsS -o /dev/null -w "Supabase ответил %{http_code}\n" \
+            "https://xxcamhzdaibiotzgcobn.supabase.co/rest/v1/drafts?select=id&limit=1" \
+            -H "apikey: sb_publishable_SiER2K_KtPdlCoD8h0V2Dw_49iKhqT6"
       - name: Собрать data.json
         run: node scripts/build-data.mjs
         env:
