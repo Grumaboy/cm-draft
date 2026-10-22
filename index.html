@@ -801,10 +801,11 @@ const OD="https://api.opendota.com/api";
 const DATA={status:"idle",updated:null,mu:{},odId:{},pending:new Set()};
 function cacheGet(k,maxAge){try{const v=JSON.parse(localStorage.getItem(k));if(v&&Date.now()-v.t<maxAge)return v}catch(e){}return null}
 function cacheSet(k,d){try{localStorage.setItem(k,JSON.stringify({t:Date.now(),d}))}catch(e){}}
+const OD_ALIAS={"Outworld Devourer":"Outworld Destroyer","Ring Master":"Ringmaster"};   // в OpenDota герои подписаны иначе
 function applyHeroStats(d){
   const maxPres=Math.max(...d.map(x=>(x.pro_pick||0)+(x.pro_ban||0)))||1;
   d.forEach(x=>{
-    const id=BYNAME[x.localized_name]; if(id==null) return;
+    const id=BYNAME[OD_ALIAS[x.localized_name]||x.localized_name]; if(id==null) return;
     const h=HEROES[id]; h.odId=x.id; DATA.odId[x.id]=id;
     const p=(x["7_pick"]||0)+(x["8_pick"]||0), w=(x["7_win"]||0)+(x["8_win"]||0);
     const wr=(w+250)/(p+500);                       // сглаживание к 50% на малых выборках

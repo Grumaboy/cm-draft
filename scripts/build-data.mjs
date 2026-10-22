@@ -8,7 +8,7 @@ const SZ_URL = "https://api.stratz.com/graphql";
 const SZ_BR = "DIVINE_IMMORTAL";
 const SZ_BASE_Q = `query($b:[RankBracketBasicEnum]){ constants{ heroes{ id displayName } } heroStats{ stats(bracketBasicIds:$b, groupByPosition:true){ heroId position matchCount winCount } } }`;
 const SZ_MU_Q = `query($h:Short!,$b:[RankBracketBasicEnum]){ heroStats{ matchUp(heroId:$h, bracketBasicIds:$b, take:200){ heroId vs{ heroId2 matchCount winCount } with{ heroId2 matchCount winCount } } } }`;
-const OD_DELAY_MS = 1100;   // бесплатный OpenDota: до 60 запросов в минуту
+const OD_DELAY_MS = 1500;   // бесплатный OpenDota: до 60 запросов в минуту, берём с запасом
 const SZ_DELAY_MS = 400;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -21,7 +21,7 @@ async function getJson(url, opt = {}, tries = 4) {
     } catch (e) {
       if (k >= tries) throw e;
     }
-    await sleep(3000 * k);
+    await sleep(5000 * k);
   }
 }
 
