@@ -843,9 +843,11 @@ function baseWr(id){const h=HEROES[id];return h.sz?h.sz.wr:h.live?h.live.wr/100:
 /* статистика, заранее собранная GitHub Actions (ветка data): мета и матчапы всех героев, данные STRATZ */
 const PRE_URL=(()=>{const m=location.hostname.match(/^([\w-]+)\.github\.io$/i), r=location.pathname.split("/").filter(Boolean)[0];
   return m&&r?`https://raw.githubusercontent.com/${m[1]}/${r}/data/data.json`:"https://raw.githubusercontent.com/Grumaboy/cm-draft/data/data.json"})();
-let PRE=null;
+let PRE=null, PRE_STALE=false;
+// старые данные (обновление не пришло больше 5 дней) не выбрасываем: STRATZ без ключа больше взять негде,
+// а OpenDota сначала пробуем загрузить заново и только при неудаче берём из старого файла
 const PRE_P=fetchT(PRE_URL,{cache:"no-cache"},8000).then(r=>r.ok?r.json():null)
-  .then(d=>{ if(d&&d.v===1&&Date.now()-d.updated<5*24*3600e3) PRE=d; return PRE }).catch(()=>null);
+  .then(d=>{ if(d&&d.v===1&&isFinite(d.updated)){ PRE=d; PRE_STALE=Date.now()-d.updated>5*24*3600e3 } return PRE }).catch(()=>null);
 function applyPreMatchups(){
   if(!PRE||!PRE.od||!PRE.od.mu) return 0;
   let n=0;
@@ -859,9 +861,11 @@ async function loadHeroStats(force){
   try{
     await PRE_P;
     let c=null, d=null;
-    if(PRE&&PRE.od&&!force){ d=PRE.od.heroStats; c={t:PRE.updated}; DATA.pre=true }
+    const usePre=()=>{ d=PRE.od.heroStats; c={t:PRE.updated}; DATA.pre=true };
+    if(PRE&&PRE.od&&!force&&!PRE_STALE) usePre();
     else { DATA.pre=false; c=force?null:cacheGet("od_herostats",6*3600e3); d=c&&c.d;
-      if(!d){const r=await fetch(OD+"/heroStats");if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_herostats",d);c={t:Date.now()}} }
+      if(!d){ try{const r=await fetch(OD+"/heroStats");if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_herostats",d);c={t:Date.now()}}
+        catch(e){ if(PRE&&PRE.od) usePre(); else throw e } } }
     applyHeroStats(d); DATA.status="ok"; DATA.updated=new Date(c.t);
     if(DATA.pre) applyPreMatchups();
     if(force){DATA.mu={};for(let i=0;i<N;i++)CTR[i].set(CTR_R[i])}
@@ -967,9 +971,9 @@ function applySzBase(d){
 }
 async function loadStratz(force){
   await PRE_P;
-  if(PRE&&PRE.sz&&!force){               // данные STRATZ уже собраны заранее — ключ не нужен
+  if(PRE&&PRE.sz&&!force&&!(PRE_STALE&&szToken())){   // данные STRATZ уже собраны заранее — ключ не нужен
     try{
-      applySzBase(PRE.sz.base); SZ.status="ok"; SZ.updated=new Date(PRE.updated); SZ.msg=""; SZ.pre=true;
+      applySzBase(PRE.sz.base); SZ.status="ok"; SZ.updated=new Date(PRE.szUpdated||PRE.updated); SZ.msg=""; SZ.pre=true;
       Object.entries(PRE.sz.mu||{}).forEach(([sid,x])=>{const id=SZ.id[sid]; if(id==null) return; const vs={},wi={};
         x.vs.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) vs[j]={g,w}}); x.with.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) wi[j]={g,w}});
         SZ.vs[id]=vs; SZ.with[id]=wi});
@@ -1010,12 +1014,12 @@ async function loadStratzMU(id,force){
 }
 function renderData(){
   const el=document.getElementById("dataStatus"), btn=document.getElementById("dataReload"); if(!el) return;
-  el.className=DATA.status==="ok"?"ok":DATA.status==="fail"?"fail":"";
+  el.className=DATA.status==="ok"&&!(DATA.pre&&PRE_STALE)?"ok":DATA.status==="fail"||(DATA.pre&&PRE_STALE)?"fail":"";
   const n=Object.keys(DATA.mu).length, p=DATA.pending.size;
   const od = DATA.status==="loading" ? "OpenDota: загрузка…"
-    : DATA.status==="ok" ? (DATA.pre?`статистика ✓ обновлена ${DATA.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · OpenDota${SZ.pre?" + STRATZ":""}`:`OpenDota ✓ ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}${p?" (матчапы грузятся: "+p+")":""}`)
+    : DATA.status==="ok" ? (DATA.pre?(PRE_STALE?`статистика от ${DATA.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — устарела, автообновление не приходит больше 5 дней`:`статистика ✓ обновлена ${DATA.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`)+` · OpenDota${SZ.pre?" + STRATZ"+(Date.now()-SZ.updated>2*864e5?` (от ${SZ.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit"})} — STRATZ не отвечает)`:""):""}`:`OpenDota ✓ ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}${p?" (матчапы грузятся: "+p+")":""}`)
     : DATA.status==="fail" ? "нет связи с OpenDota — встроенная модель" : "статистика не загружена";
-  const sz = SZ.pre ? "" : SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
+  const sz = SZ.pre ? (DATA.pre?"":` · STRATZ ✓ (данные от ${SZ.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit"})}${PRE_STALE?", устарели":""})`) : SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
     : SZ.status==="loading" ? " · STRATZ: загрузка…" : SZ.status==="fail" ? " · STRATZ: ошибка" : " · STRATZ не подключён";
   el.textContent = od+sz;
   btn.hidden = DATA.status==="loading" || (DATA.status==="ok"&&DATA.pre);   // данные обновляются сами раз в 8 часов
@@ -1060,7 +1064,27 @@ function unavailable(){return new Set(S.draft.filter(x=>x!=null&&x>=0))}
 /* ===== КОМАНДА И РАЗВЕДКА ===== */
 const TEAM_KEY="cm_team", USE_KEY="cm_use", SHARED_CODE="aqueer-shared-team";
 const emptyPlayer=pos=>({nick:"",acc:"",pos,heroes:[],stats:{}});
-function loadTeam(){try{const t=JSON.parse(localStorage.getItem(TEAM_KEY));if(t&&Array.isArray(t.players))return t}catch(e){}
+/* данные команды общие и их может перезаписать любой посетитель (или старая версия сайта) —
+   приводим их к правильному виду, чтобы кривая запись не ломала сайт у всех */
+function normTeam(d){
+  const t=(d&&typeof d==="object"&&!Array.isArray(d))?d:{};
+  const str=(v,n)=>typeof v==="string"?v.slice(0,n):typeof v==="number"&&isFinite(v)?String(v).slice(0,n):"";
+  const names=a=>Array.isArray(a)?[...new Set(a.filter(n=>typeof n==="string"&&BYNAME[n]!=null))]:[];
+  const obj=v=>v&&typeof v==="object"&&!Array.isArray(v)?v:{};
+  const players=(Array.isArray(t.players)?t.players:[]).filter(p=>p&&typeof p==="object").slice(0,10).map((p,k)=>{
+    const heroes=names(p.heroes).slice(0,60), pos=Math.round(+p.pos);
+    return {...p, nick:str(p.nick,24), acc:str(p.acc,64), pos:pos>=1&&pos<=5?pos:Math.min(5,k+1), heroes, top:names(p.top).filter(n=>heroes.includes(n)), stats:obj(p.stats)};
+  });
+  const drafts={};
+  Object.entries(obj(t.drafts)).slice(-3000).forEach(([k,v])=>{ if(!v||typeof v!=="object") return; const o={};
+    if(typeof v.tok==="string") o.tok=v.tok.slice(0,80); if(typeof v.name==="string") o.name=v.name.slice(0,80);
+    if(typeof v.del==="boolean") o.del=v.del; if(v.res==="win"||v.res==="loss"||v.res===null) o.res=v.res; drafts[String(k).slice(0,64)]=o });
+  const opps=(Array.isArray(t.opps)?t.opps:[]).filter(o=>o&&typeof o==="object").slice(0,50).map(o=>({...o, name:str(o.name,60),
+    players:(Array.isArray(o.players)?o.players:[]).filter(x=>x&&typeof x==="object").slice(0,10).map(x=>({...x, name:str(x.name,40), acc:str(x.acc,64),
+      heroes:(Array.isArray(x.heroes)?x.heroes:[]).filter(y=>y&&typeof y.h==="string"&&BYNAME[y.h]!=null).map(y=>({h:y.h,g:Math.max(0,+y.g||0),w:Math.max(0,+y.w||0)}))}))}));
+  return {...t, code:str(t.code,64), name:str(t.name,60), players, opps, activeOpp:opps.some(o=>o.id===t.activeOpp)?t.activeOpp:null, drafts};
+}
+function loadTeam(){try{const t=JSON.parse(localStorage.getItem(TEAM_KEY));if(t&&Array.isArray(t.players))return normTeam(t)}catch(e){}
   return {code:"",name:"",players:[1,2,3,4,5].map(emptyPlayer),opps:[],activeOpp:null}}
 let TEAM=loadTeam();
 let USE=(()=>{try{return {pool:true,scout:true,...JSON.parse(localStorage.getItem(USE_KEY)||"{}")}}catch(e){return {pool:true,scout:true}}})();
@@ -1268,7 +1292,11 @@ function commit(id,team){
   S.selPos=null; S.selFor=null;
   S.log.push({i,team,act,id,g});
   if(!S.draftId) S.draftId=newDraftId();
-  if(done()){ const rec=recordFromState(); histUpsert(rec); dbInsert(rec); ownDraft(rec.id,{tok:histLoad().find(x=>x.id===rec.id).tok}); }
+  if(done()){ const rec=recordFromState(), old=S.replaces;
+    if(old){                                      // драфт переделан после отмены хода: новая запись заменяет старую
+      const om=ownMeta(old)||{}, ol=histLoad().find(x=>x.id===old)||{}; rec.name=om.name||ol.name||""; rec.res=("res" in om?om.res:ol.res)||null;
+      histSave(histLoad().filter(x=>x.id!==old)); ownDraft(old,{del:true}); S.replaces=null }
+    histUpsert(rec); dbInsert(rec); ownDraft(rec.id,{tok:histLoad().find(x=>x.id===rec.id).tok,...(rec.name?{name:rec.name}:{}),...(rec.res?{res:rec.res}:{})}); }
   if(!setLockAfter&&act==="P"&&id>=0&&team==="P"){
     // герой из пула команды встаёт на позицию своего игрока, если она ещё свободна
     const taken=new Set(picks("P").filter(x=>x!==id&&S.locks[x]).map(x=>S.locks[x]));
@@ -1304,6 +1332,7 @@ function undo(){
   if(!S.history.length) return;
   clearTimeout(S.aiTimer);
   const h=JSON.parse(S.history.pop());
+  if(done()){ S.replaces=S.replaces||S.draftId; S.draftId=newDraftId() }   // законченный драфт уже в истории — переделанный сохранится отдельной записью
   S.draft=h.draft;S.step=h.step;S.log=h.log;S.reserve=h.reserve;if(h.order)S.order=h.order;S.locks=h.locks||{};S.sel=null;S.stepLeft=STEP_TIME(S.step);
   render(); scheduleAI();
 }
@@ -1312,7 +1341,7 @@ function newDraft(){
   S.playerSide=$("#setSide").value; S.diff=$("#setDiff").value;
   const o=$("#setOrder").value; S.playerFirst=o==="first"?true:o==="second"?false:Math.random()<.5;
   S.timer=!MAN()&&$("#setTimer").checked;
-  S.order=AP()?orderAP():null; S.draft=Array(ORD().length).fill(null);S.step=0;S.sel=null;S.selPos=null;S.locks={};S.log=[];S.history=[];S.draftId=newDraftId();
+  S.order=AP()?orderAP():null; S.draft=Array(ORD().length).fill(null);S.step=0;S.sel=null;S.selPos=null;S.locks={};S.log=[];S.history=[];S.draftId=newDraftId();S.replaces=null;
   S.reserve={P:RESERVE,A:RESERVE};S.stepLeft=STEP_TIME(0);
   render(); scheduleAI();
 }
@@ -1657,6 +1686,8 @@ function histUpsert(rec){
 }
 function validRecord(r){
   if(!r||typeof r.id!=="string"||!Array.isArray(r.draft)||!["ai","manual","allpick"].includes(r.mode)) return false;
+  if(!isFinite(r.t)||!["rad","dire"].includes(r.side)) return false;
+  if(r.log&&!(Array.isArray(r.log)&&r.log.every(e=>e&&Number.isInteger(e.i)&&e.i>=0&&e.i<r.draft.length&&["P","A","N"].includes(e.team)&&["P","B"].includes(e.act)&&(Number.isInteger(e.id)&&e.id>=-1&&e.id<N)))) r.log=[];
   if(r.draft.length!==(r.mode==="allpick"?AP_BANS+10:24)) return false;
   if(r.mode==="allpick"&&!(typeof r.order==="string"&&r.order.length===10&&/^[FS]+$/.test(r.order))) return false;
   return r.draft.every(x=>x===null||(Number.isInteger(x)&&x>=-1&&x<N));
@@ -1691,9 +1722,10 @@ const nameToId=n=>n==null?null:n==="-"?-1:(BYNAME[n]??null);
 function toDb(r){return {id:r.id,created_at:new Date(r.t).toISOString(),mode:r.mode,side:r.side,first_pick:!!r.first,order_sides:r.order||null,edit_token:r.tok||null,
   draft:r.draft.map(idToName),log:(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,h:idToName(e.id),r:e.r,b:idToName(e.b),p:e.p||undefined})),author:getNick().slice(0,32)||null}}
 function fromDb(x){
-  const draft=(x.draft||[]).map(nameToId);
-  return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:x.first_pick,order:x.order_sides||undefined,res:x.result||null,draft,name:"",author:x.author||"",remote:true,
-    log:(x.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:nameToId(e.h),r:e.r,b:nameToId(e.b),p:e.p}))};
+  x=x&&typeof x==="object"?x:{};
+  const draft=Array.isArray(x.draft)?x.draft.map(nameToId):null, int=v=>Number.isInteger(v)?v:null;
+  return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:!!x.first_pick,order:x.order_sides||undefined,res:x.result==="win"||x.result==="loss"?x.result:null,draft,name:"",author:typeof x.author==="string"?x.author.slice(0,32):"",remote:true,
+    log:(Array.isArray(x.log)?x.log:[]).filter(e=>e&&typeof e==="object").map(e=>({i:int(e.i),team:e.team,act:e.act,id:nameToId(e.h),r:int(e.r),b:nameToId(e.b),p:int(e.p)}))};
 }
 // новые ключи (sb_publishable_…) передаются только в заголовке apikey; старый anon-ключ (JWT) работает так же
 const dbHeaders=()=>({apikey:DB.key,"Content-Type":"application/json"});
@@ -2028,7 +2060,7 @@ async function teamRemoteSave(){
 async function teamRemoteLoad(code){
   const r=await rpc("get_team",{p_code:code});
   if(!r.ok) throw new Error("ошибка базы "+r.status);
-  const d=await r.json(); return d&&Array.isArray(d.players)?d:null;
+  const d=await r.json(); return d&&Array.isArray(d.players)?normTeam(d):null;
 }
 const newTeamCode=()=>Array.from(crypto.getRandomValues(new Uint8Array(9)),b=>"abcdefghjkmnpqrstuvwxyz23456789"[b%31]).join("").replace(/(.{3})(?=.)/g,"$1-");
 
@@ -2112,7 +2144,7 @@ function wirePrep(){
   v.querySelectorAll("[data-restore]").forEach(b=>b.onclick=()=>{
     const bk=teamBackups()[+b.dataset.restore]; if(!bk) return;
     backupTeam("перед восстановлением копии");
-    const code=TEAM.code; TEAM={...bk.team, code: code||bk.team.code||""};
+    const code=TEAM.code; TEAM=normTeam({...bk.team, code: code||bk.team.code||""});
     saveTeam(); TEAM_SYNC="копия восстановлена"+(TEAM.code&&dbOn()?" и сохраняется в базу":""); renderPrep(); render();
   });
   $("#teamName").onchange=e=>{TEAM.name=e.target.value.trim().slice(0,60);saveTeam()};
@@ -2261,7 +2293,7 @@ loadStratz(false);
 /* одна общая команда на всех: без кодов, кто открыл сайт — видит и может менять пул */
 const mergeDrafts=(a,b)=>{const m={...(a||{})}; Object.entries(b||{}).forEach(([k,v])=>{m[k]={...(m[k]||{}),...v}}); return m};
 function teamApply(d,why){
-  d={...d,code:SHARED_CODE,drafts:mergeDrafts(d.drafts,TEAM.drafts)};
+  d=normTeam({...d,code:SHARED_CODE,drafts:mergeDrafts(normTeam(d).drafts,TEAM.drafts)});
   if(JSON.stringify(d)===JSON.stringify(TEAM)) return false;
   backupTeam(why); TEAM=d; saveTeam(false); render(); if(VIEW==="prep")renderPrep(); if(VIEW==="history")renderHistory();
   return true;
@@ -2526,7 +2558,9 @@ function renderReview(){
   const pr=$("#rvParse"); if(pr) pr.onclick=rvRequestParse;
   const sh=$("#rvShare"); if(sh) sh.onclick=async()=>{const url=location.origin+location.pathname+"#match="+RV.id; try{await navigator.clipboard.writeText(url);sh.textContent="Скопировано ✓"}catch(e){const i=document.createElement("input");i.value=url;i.readOnly=true;i.style.cssText="flex:1 1 260px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 8px";sh.replaceWith(i);i.select()}};
 }
-{const mh=location.hash.match(/^#match=(\d{9,12})$/); if(mh){ showView("review"); rvLoad(mh[1]) }}
+function openMatchFromHash(){const mh=location.hash.match(/^#match=(\d{9,12})$/); if(mh&&mh[1]!==String(RV.id)){ showView("review"); rvLoad(mh[1]) }}
+openMatchFromHash();
+window.addEventListener("hashchange",openMatchFromHash);   // ссылка на разбор открыта, когда сайт уже был открыт в этой вкладке
 
 </script>
 

@@ -61,11 +61,40 @@ async function stratz(token) {
   return { base, mu };
 }
 
+// прошлый data.json из ветки data: если сейчас что-то не загрузилось, берём это оттуда,
+// чтобы один неудачный запуск не затирал хорошие данные
+async function previous() {
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) return null;
+  try { const r = await fetch(`https://raw.githubusercontent.com/${repo}/data/data.json`); return r.ok ? await r.json() : null; }
+  catch (e) { return null; }
+}
+const warn = msg => console.log(`::warning::${msg}`);
+function fillMissing(fresh, old, what) {
+  if (!old) return 0;
+  let n = 0;
+  for (const [k, v] of Object.entries(old)) if (!(k in fresh)) { fresh[k] = v; n++; }
+  if (n) warn(`${what}: для ${n} героев не загрузилось — взяты из прошлой сборки`);
+  return n;
+}
+
+const prev = await previous();
 const out = { v: 1, updated: Date.now(), od: await openDota() };
+if (out.od.heroStats.length < 100) throw new Error("OpenDota вернул слишком мало героев — не публикую");
+fillMissing(out.od.mu, prev?.od?.mu, "OpenDota матчапы");
+
 const token = process.env.STRATZ_TOKEN;
+let sz = null;
 if (token) {
-  try { out.sz = await stratz(token); }
-  catch (e) { console.warn("STRATZ пропущен:", e.message); }
-} else console.log("STRATZ_TOKEN не задан — собираю только OpenDota");
+  try { sz = await stratz(token); }
+  catch (e) { warn("STRATZ не ответил: " + e.message); }
+} else warn("STRATZ_TOKEN не задан — собираю только OpenDota");
+if (sz && (sz.base?.constants?.heroes?.length || 0) >= 100) {
+  out.sz = sz; out.szUpdated = Date.now();
+  fillMissing(out.sz.mu, prev?.sz?.mu, "STRATZ матчапы");
+} else if (prev?.sz) {
+  out.sz = prev.sz; out.szUpdated = prev.szUpdated || prev.updated;
+  warn("Данные STRATZ взяты из прошлой сборки от " + new Date(out.szUpdated).toISOString().slice(0, 16));
+}
 await writeFile(new URL("../data.json", import.meta.url), JSON.stringify(out));
 console.log("data.json записан");
