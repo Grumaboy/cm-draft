@@ -106,6 +106,17 @@ body.view-page .settings, body.view-page #timeline, body.view-page #draftBar, bo
 .hlist{display:flex;flex-direction:column;gap:6px}
 .hitem{display:grid;grid-template-columns:minmax(120px,1.1fr) minmax(0,2fr) minmax(0,2fr) 70px;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;text-align:left}
 .hitem:hover{border-color:var(--gold)}
+.hrow{position:relative}
+.hrow .hitem{width:100%;padding-right:52px}
+.hdel{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:grid;place-items:center;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);font-size:16px;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,color .15s}
+.hrow:hover .hdel,.hdel:focus-visible,.hdel.arm{opacity:1}
+.hdel:hover{color:var(--bad);border-color:var(--bad)}
+.hdel.arm{width:auto;padding:0 10px;background:var(--bad);border-color:var(--bad);color:#fff;font-size:13px;font-weight:600}
+@media (hover:none){.hdel{opacity:.85}}
+@media (max-width:720px){.hrow .hitem{padding-right:12px}.hdel{top:8px;transform:none}.hrow .hitem .ttl{padding-right:44px;display:inline-block}}
+.hundo{display:flex;align-items:center;gap:10px;font-size:13px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.hdet-top .hdel-btn{margin-left:auto}
+.hdel-btn.arm{background:var(--bad);border-color:var(--bad);color:#fff}
 .hitem .when{font-size:12px;color:var(--muted)}
 .hitem .ttl{font-weight:600;font-size:14px}
 .five{display:flex;gap:3px;min-width:0}
@@ -1594,7 +1605,7 @@ function render(){renderTimeline();renderTeams();renderTurn();renderPool();rende
 
 /* ===== HISTORY ===== */
 const HKEY="cm_history", HMAX=300;
-let VIEW="ai", HSEL=null, HFILTER="all", HDEL=false;
+let VIEW="ai", HSEL=null, HFILTER="all", HDEL=false, HARM=null, HUNDO=null;
 const newDraftId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function histLoad(){try{const v=JSON.parse(localStorage.getItem(HKEY));return Array.isArray(v)?v:[]}catch(e){return []}}
 function histSave(list){try{localStorage.setItem(HKEY,JSON.stringify(list.slice(0,HMAX)))}catch(e){}}
@@ -1682,6 +1693,16 @@ async function dbFetch(){
    поэтому на любом устройстве с тем же кодом история и результаты одинаковые */
 const teamDrafts=()=>TEAM.drafts||(TEAM.drafts={});
 function ownDraft(id,patch){ if(!id) return; const d=teamDrafts(); d[id]={...(d[id]||{}),...patch}; saveTeam() }
+function deleteDraft(id){                       // скрываем драфт у всей команды; запись из этого браузера убираем совсем
+  const l=histLoad(), item=l.find(x=>x.id===id);
+  if(item) histSave(l.filter(x=>x.id!==id));
+  ownDraft(id,{del:true}); HUNDO={id,item}; HARM=null; HDEL=false;
+}
+function undoDelete(){
+  if(!HUNDO) return; const {id,item}=HUNDO;
+  if(item&&!histLoad().some(x=>x.id===id)) histSave([item,...histLoad()].sort((a,b)=>b.t-a.t));
+  ownDraft(id,{del:false}); HUNDO=null;
+}
 const ownMeta=id=>(TEAM.drafts||{})[id]||null;
 const isOwn=id=>!!(ownMeta(id)||histLoad().some(x=>x.id===id));
 const tokenOf=id=>{const l=histLoad().find(x=>x.id===id); return (l&&l.tok)||(ownMeta(id)||{}).tok||null};
@@ -1772,7 +1793,7 @@ function historyListHTML(){
   const items=list.map(r=>{
     const our=teamPicksOf(r,"P"), their=teamPicksOf(r,"A"), pr=withRecord(r,()=>winProb());
     const ourSide=r.side==="dire"?"dire":"rad", thSide=ourSide==="rad"?"dire":"rad";
-    return `<button class="hitem" data-hid="${esc(r.id)}"><span><span class="ttl">${esc(r.name||"Драфт "+fmtDate(r.t))}</span><br><span class="when">${fmtDate(r.t)} · <span class="badge">${modeName(r.mode)}</span>${r.author?" · "+esc(r.author):""}</span></span>${fiveHTML(our,ourSide)}${fiveHTML(their,thSide)}<span class="prob ${pr>=0.5?"pos":"neg"}">${(pr*100).toFixed(0)}%${r.res?`<br><span class="badge ${r.res}">${r.res==="win"?"победа":"поражение"}</span>`:""}</span></button>`;
+    return `<div class="hrow"><button class="hitem" data-hid="${esc(r.id)}"><span><span class="ttl">${esc(r.name||"Драфт "+fmtDate(r.t))}</span><br><span class="when">${fmtDate(r.t)} · <span class="badge">${modeName(r.mode)}</span>${r.author?" · "+esc(r.author):""}</span></span>${fiveHTML(our,ourSide)}${fiveHTML(their,thSide)}<span class="prob ${pr>=0.5?"pos":"neg"}">${(pr*100).toFixed(0)}%${r.res?`<br><span class="badge ${r.res}">${r.res==="win"?"победа":"поражение"}</span>`:""}</span></button><button class="hdel${HARM===r.id?" arm":""}" data-hdel="${esc(r.id)}" title="Удалить драфт из истории" aria-label="${HARM===r.id?"Подтвердить удаление":"Удалить драфт"}">${HARM===r.id?"Удалить?":"🗑"}</button></div>`;
   }).join("");
   return `<div class="hist-head"><h2>История драфтов</h2>
       ${dbOn()?`<select id="hSrc" aria-label="Чьи драфты"><option value="all">Все посетители</option><option value="mine">Только наши</option></select>`:""}
@@ -1786,6 +1807,7 @@ function historyListHTML(){
     ${dbOn()&&HREMOTE==null&&!HREMOTE_ERR?'<div class="muted">Загружаю общую историю…</div>':""}
     ${HSYNC?`<div class="${/не удалось/.test(HSYNC)?"neg":"pos"}" style="font-size:13px">${esc(HSYNC)}</div>`:""}
     ${HREMOTE_ERR?`<div class="neg" style="font-size:13px">Общая база недоступна (${esc(HREMOTE_ERR)}), показываю драфты из этого браузера.</div>`:""}
+    ${HUNDO?`<div class="hundo">Драфт удалён из истории<button class="btn" id="hUndo">Вернуть</button></div>`:""}
     ${statsHTML(historySource().filter(r=>r.mode==="manual"))}
     <div class="hlist">${items||'<div class="card"><p class="muted" style="margin:0">Пока нет законченных драфтов. Доведи драфт до конца в «Тренировке», «Турнире» или «All Pick», и он появится здесь.</p></div>'}</div>`;
 }
@@ -1798,7 +1820,7 @@ function historyDetailHTML(r){
     const ours=S.log.filter(e=>e.team==="P"&&e.g);
     const worst=ours.slice().sort((a,b)=>b.g.rank-a.g.rank).slice(0,3).filter(e=>e.g.rank>3);
     const row=(n,a,b)=>`<div class="row"><span>${n}</span><span><b>${a}</b> / ${b}</span></div>`;
-    return `<div class="hist-head"><button class="btn" id="hBack">← К списку</button><h2 style="margin-left:4px">Разбор драфта</h2></div>
+    return `<div class="hist-head"><button class="btn" id="hBack">← К списку</button><h2 style="margin-left:4px">Разбор драфта</h2><button class="btn hdel-btn${HDEL?" arm":""}" id="hDelete" title="Удалить драфт из истории">${HDEL?"Точно удалить? Нажми ещё раз":"🗑 Удалить драфт"}</button></div>
     <div class="card hdet">
       <div class="hdet-top">${r.remote&&!isOwn(r.id)?`<span style="font-weight:600;font-size:16px;margin-right:auto">${esc(r.author?"Драфт: "+r.author:"Драфт")}</span>`:`<input id="hName" maxlength="80" value="${esc(r.name||"")}" placeholder="Название, например «Финал против Team X»">`}
         <span class="badge">${modeName(r.mode)}</span><span class="muted">${fmtDate(r.t)} · мы ${ourSide==="rad"?"Radiant":"Dire"}${AP()?"":", "+(S.playerFirst?"первый пик":"второй пик")}</span></div>
@@ -1831,7 +1853,7 @@ function historyDetailHTML(r){
         ${RES_MSG?`<div class="neg" style="font-size:13px">${esc(RES_MSG)}</div>`:""}`
       :`<p class="muted" style="margin:0">${r.res?(r.res==="win"?"Победа":"Поражение")+". ":""}Результат может отметить только тот, кто сохранил этот драфт.</p>`}
     </div>`:""}
-    ${r.remote?"":`<div class="card"><div class="actions"><button class="btn" id="hDelete">${HDEL?"Точно удалить? Нажми ещё раз":"Удалить из истории"}</button></div></div>`}`;
+`;
   });
 }
 
@@ -1842,14 +1864,16 @@ function renderHistory(){
   v.innerHTML = r ? historyDetailHTML(r) : historyListHTML();
   if(!r){
     const f=$("#hFilter"); f.value=HFILTER; f.onchange=()=>{HFILTER=f.value;renderHistory()};
-    v.querySelectorAll(".hitem").forEach(b=>b.onclick=()=>{HSEL=b.dataset.hid;HDEL=false;renderHistory();window.scrollTo(0,0)});
+    v.querySelectorAll(".hitem").forEach(b=>b.onclick=()=>{HSEL=b.dataset.hid;HDEL=false;HARM=null;renderHistory();window.scrollTo(0,0)});
+    v.querySelectorAll("[data-hdel]").forEach(b=>b.onclick=e=>{e.stopPropagation(); const id=b.dataset.hdel; if(HARM!==id){HARM=id;renderHistory();return} deleteDraft(id); renderHistory()});
+    const un=$("#hUndo"); if(un) un.onclick=()=>{undoDelete();renderHistory()};
     const sr=$("#hSrc"); if(sr){sr.value=HSRC; sr.onchange=()=>{HSRC=sr.value;renderHistory()}}
     const nk=$("#hNick"); if(nk) nk.onchange=()=>{try{localStorage.setItem(NICK_KEY,nk.value.trim().slice(0,32))}catch(e){}};
   } else {
     $("#hBack").onclick=()=>{HSEL=null;HDEL=false;renderHistory()};
     if($("#hName")) $("#hName").onchange=e=>{const nm=e.target.value.trim().slice(0,80), l=histLoad(),k=l.findIndex(x=>x.id===r.id);if(k>=0){l[k].name=nm;histSave(l)} if(TEAM.code) ownDraft(r.id,{name:nm})};
     v.querySelectorAll("[data-res]").forEach(b=>b.onclick=()=>setResult(r.id,b.dataset.res||null));
-    if($("#hDelete")) $("#hDelete").onclick=()=>{ if(!HDEL){HDEL=true;renderHistory();return} histSave(histLoad().filter(x=>x.id!==r.id)); if(TEAM.code) ownDraft(r.id,{del:true}); HSEL=null; HDEL=false; renderHistory(); };
+    if($("#hDelete")) $("#hDelete").onclick=()=>{ if(!HDEL){HDEL=true;renderHistory();return} deleteDraft(r.id); HSEL=null; renderHistory(); window.scrollTo(0,0) };
   }
 }
 function showView(v){
