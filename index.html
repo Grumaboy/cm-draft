@@ -2196,6 +2196,9 @@ newDraft();
 $("#dataReload").onclick=()=>{loadHeroStats(true);loadStratz(true)};
 function renderStratzPanel(){
   const m=$("#stratzMsg"); if(!m) return;
+  const pre=!!SZ.pre;                             // статистика STRATZ уже собрана заранее с ключом из настроек репозитория — личный ключ не нужен
+  $("#stratzBtn").hidden=pre; $("#stratzNav").hidden=pre;
+  if(pre&&!$("#stratzPanel").hidden){ $("#stratzPanel").hidden=true; $("#stratzPanel").style.display="none" }
   const has=!!szToken();
   $("#stratzBtn").textContent = SZ.status==="ok" ? "STRATZ ✓" : "Ключ STRATZ";
   const nb=$("#stratzNav"); nb.textContent = SZ.status==="ok" ? "STRATZ ✓" : SZ.status==="fail" ? "STRATZ: ошибка" : has ? "STRATZ…" : "Подключить STRATZ"; nb.classList.toggle("ok",SZ.status==="ok");
