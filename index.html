@@ -808,7 +808,8 @@ function synRules(A,B){
 const sum=r=>r.reduce((s,x)=>s+x[0],0);
 const CTR = Array.from({length:N},()=>new Float32Array(N));
 const SYN = Array.from({length:N},()=>new Float32Array(N));
-for(let i=0;i<N;i++)for(let j=0;j<N;j++){ if(i===j)continue; CTR[i][j]=sum(ctrRules(HEROES[i],HEROES[j])); SYN[i][j]=sum(synRules(HEROES[i],HEROES[j])); }
+// встроенные правила — только запасной вариант, если по паре нет статистики (на реальных матчах они ничего не добавили к данным STRATZ)
+for(let i=0;i<N;i++)for(let j=0;j<N;j++){ if(i===j)continue; CTR[i][j]=sum(ctrRules(HEROES[i],HEROES[j]))*0.3; SYN[i][j]=sum(synRules(HEROES[i],HEROES[j]))*0.1; }
 const CTR_R = CTR.map(r=>Float32Array.from(r));
 const SYN_R = SYN.map(r=>Float32Array.from(r));
 
@@ -842,9 +843,11 @@ function baseWr(id){const h=HEROES[id];return h.sz?h.sz.wr:h.live?h.live.wr/100:
 /* статистика, заранее собранная GitHub Actions (ветка data): мета и матчапы всех героев, данные STRATZ */
 const PRE_URL=(()=>{const m=location.hostname.match(/^([\w-]+)\.github\.io$/i), r=location.pathname.split("/").filter(Boolean)[0];
   return m&&r?`https://raw.githubusercontent.com/${m[1]}/${r}/data/data.json`:"https://raw.githubusercontent.com/Grumaboy/cm-draft/data/data.json"})();
-let PRE=null;
+let PRE=null, PRE_STALE=false;
+// старые данные (обновление не пришло больше 5 дней) не выбрасываем: STRATZ без ключа больше взять негде,
+// а OpenDota сначала пробуем загрузить заново и только при неудаче берём из старого файла
 const PRE_P=fetchT(PRE_URL,{cache:"no-cache"},8000).then(r=>r.ok?r.json():null)
-  .then(d=>{ if(d&&d.v===1&&Date.now()-d.updated<5*24*3600e3) PRE=d; return PRE }).catch(()=>null);
+  .then(d=>{ if(d&&d.v===1&&isFinite(d.updated)){ PRE=d; PRE_STALE=Date.now()-d.updated>5*24*3600e3 } return PRE }).catch(()=>null);
 function applyPreMatchups(){
   if(!PRE||!PRE.od||!PRE.od.mu) return 0;
   let n=0;
@@ -858,9 +861,11 @@ async function loadHeroStats(force){
   try{
     await PRE_P;
     let c=null, d=null;
-    if(PRE&&PRE.od&&!force){ d=PRE.od.heroStats; c={t:PRE.updated}; DATA.pre=true }
+    const usePre=()=>{ d=PRE.od.heroStats; c={t:PRE.updated}; DATA.pre=true };
+    if(PRE&&PRE.od&&!force&&!PRE_STALE) usePre();
     else { DATA.pre=false; c=force?null:cacheGet("od_herostats",6*3600e3); d=c&&c.d;
-      if(!d){const r=await fetch(OD+"/heroStats");if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_herostats",d);c={t:Date.now()}} }
+      if(!d){ try{const r=await fetch(OD+"/heroStats");if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_herostats",d);c={t:Date.now()}}
+        catch(e){ if(PRE&&PRE.od) usePre(); else throw e } } }
     applyHeroStats(d); DATA.status="ok"; DATA.updated=new Date(c.t);
     if(DATA.pre) applyPreMatchups();
     if(force){DATA.mu={};for(let i=0;i<N;i++)CTR[i].set(CTR_R[i])}
@@ -870,6 +875,24 @@ async function loadHeroStats(force){
   renderData(); render();
 }
 function allPicked(){const r=new Set();Object.entries(STATES).forEach(([m,st])=>{const o=ordOf(m,st);st.draft.forEach((v,i)=>{if(v!=null&&v>=0&&o[i]&&o[i].act==="P")r.add(v)})});return [...r]}
+/* насколько общая сила героев (винрейт) переносится на конкретные пары — считается по самим данным STRATZ.
+   Без этой поправки у сильных героев занижались контрпики и синергии. */
+const SZ_K={vs:0.7,with:0.7};
+/* Веса модели подобраны по 7 903 реальным матчам Divine–Immortal с OpenDota (22.10.2026, игры дольше 15 минут):
+   на одной половине матчей подбирали, на другой проверяли. Точность 56–57%, прогнозы откалиброваны:
+   матчи, где модель даёт 60%, и выигрываются примерно в 60% случаев.
+   Единица оценки — примерно 1% шанса на победу. Проверки состава (контроль, пуш и т.п.) и встроенные правила
+   на реальных играх ничего не предсказали, поэтому в прогноз не входят. */
+const MODEL={str:0.65, vs:0.26, with:0.077, role:1.0, side:3.5, prior:400, scale:25};
+const heroStr=id=>{const h=HEROES[id]; return (h.sz||h.live) ? (baseWr(id)-0.5)*100*MODEL.str : h.meta*0.5};   // сила героя по винрейту
+function szCalib(){
+  const fit=pts=>{ if(pts.length<500) return null; let sx=0,sy=0,sxx=0,sxy=0; pts.forEach(([x,y])=>{sx+=x;sy+=y;sxx+=x*x;sxy+=x*y}); const n=pts.length, k=(n*sxy-sx*sy)/(n*sxx-sx*sx); return isFinite(k)?Math.max(0.3,Math.min(1.2,k)):null };
+  const vs=[],wi=[];
+  for(let a=0;a<N;a++)for(let b=0;b<N;b++){ if(a===b) continue;
+    const v=SZ.vs[a]&&SZ.vs[a][b]; if(v&&v.g>=300) vs.push([baseWr(a)-baseWr(b),v.w/v.g-0.5]);
+    const w=a<b&&SZ.with[a]&&SZ.with[a][b]; if(w&&w.g>=300) wi.push([baseWr(a)+baseWr(b)-1,w.w/w.g-0.5]); }
+  const kv=fit(vs), kw=fit(wi); if(kv!=null) SZ_K.vs=kv; if(kw!=null) SZ_K.with=kw;
+}
 function dataAdv(a,b){ // насколько a выигрывает у b сверх ожидаемого по общей силе героев, в п.п. (STRATZ приоритетнее)
   let w,g,src;
   const sa=SZ.vs[a]&&SZ.vs[a][b], sb=SZ.vs[b]&&SZ.vs[b][a];
@@ -877,25 +900,23 @@ function dataAdv(a,b){ // насколько a выигрывает у b све�
   if(sa&&sa.g){w=sa.w;g=sa.g;src="STRATZ"} else if(sb&&sb.g){w=sb.g-sb.w;g=sb.g;src="STRATZ"}
   else if(ma&&ma.g){w=ma.w;g=ma.g;src="OpenDota"} else if(mb&&mb.g){w=mb.g-mb.w;g=mb.g;src="OpenDota"} else return null;
   // общая сила героя уже учтена в мете — здесь оставляем только то, что зависит от конкретного соперника
-  const exp=Math.max(0.3,Math.min(0.7,0.5+baseWr(a)-baseWr(b)));
-  const sh=(w+15*exp)/(g+15);
+  const exp=Math.max(0.3,Math.min(0.7,0.5+SZ_K.vs*(baseWr(a)-baseWr(b))));
+  const sh=(w+MODEL.prior*exp)/(g+MODEL.prior);           // сильное сглаживание: при ~400 играх половина разницы — случайность
   return {pp:Math.max(-12,Math.min(12,(sh-exp)*100)),raw:w/g*100,exp:exp*100,g,src};
 }
 function withAdv(a,b){ // насколько пара a+b выигрывает чаще, чем ожидается по силе героев
   const x=(SZ.with[a]&&SZ.with[a][b])||(SZ.with[b]&&SZ.with[b][a]); if(!x||!x.g) return null;
-  const base=Math.max(0.3,Math.min(0.7,baseWr(a)+baseWr(b)-0.5));   // ожидание для пары: сила обоих героев складывается
-  const sh=(x.w+20*base)/(x.g+20);
+  const base=Math.max(0.3,Math.min(0.7,0.5+SZ_K.with*(baseWr(a)+baseWr(b)-1)));   // ожидание для пары: сила обоих героев складывается
+  const sh=(x.w+MODEL.prior*base)/(x.g+MODEL.prior);
   return {pp:Math.max(-10,Math.min(10,(sh-base)*100)),raw:x.w/x.g*100,g:x.g};
 }
 function updateSyn(a,b){
   const d=withAdv(a,b); if(!d){SYN[a][b]=SYN_R[a][b];SYN[b][a]=SYN_R[b][a];return}
-  const wd=0.85*d.g/(d.g+40), v=d.pp*0.3;
-  SYN[a][b]=(1-wd)*SYN_R[a][b]+wd*v; SYN[b][a]=(1-wd)*SYN_R[b][a]+wd*v;
+  SYN[a][b]=SYN[b][a]=d.pp*MODEL.with;
 }
 function updatePair(a,b){
   const d=dataAdv(a,b); if(!d){CTR[a][b]=CTR_R[a][b];return}
-  const wd=0.85*d.g/(d.g+20);
-  CTR[a][b]=(1-wd)*CTR_R[a][b]+wd*Math.max(0,d.pp)*0.25;
+  CTR[a][b]=Math.max(0,d.pp)*MODEL.vs;              // вторая половина пары (минус) достаётся сопернику в CTR[b][a]
 }
 async function loadMatchups(id,force){
   const h=HEROES[id];
@@ -950,12 +971,13 @@ function applySzBase(d){
 }
 async function loadStratz(force){
   await PRE_P;
-  if(PRE&&PRE.sz&&!force){               // данные STRATZ уже собраны заранее — ключ не нужен
+  if(PRE&&PRE.sz&&!force&&!(PRE_STALE&&szToken())){   // данные STRATZ уже собраны заранее — ключ не нужен
     try{
-      applySzBase(PRE.sz.base); SZ.status="ok"; SZ.updated=new Date(PRE.updated); SZ.msg=""; SZ.pre=true;
+      applySzBase(PRE.sz.base); SZ.status="ok"; SZ.updated=new Date(PRE.szUpdated||PRE.updated); SZ.msg=""; SZ.pre=true;
       Object.entries(PRE.sz.mu||{}).forEach(([sid,x])=>{const id=SZ.id[sid]; if(id==null) return; const vs={},wi={};
         x.vs.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) vs[j]={g,w}}); x.with.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) wi[j]={g,w}});
         SZ.vs[id]=vs; SZ.with[id]=wi});
+      szCalib();
       for(let i=0;i<N;i++) for(let j=0;j<N;j++) if(i!==j){updatePair(i,j); if(i<j) updateSyn(i,j)}
       renderData(); render(); renderStratzPanel(); return;
     }catch(e){ SZ.pre=false }
@@ -992,12 +1014,12 @@ async function loadStratzMU(id,force){
 }
 function renderData(){
   const el=document.getElementById("dataStatus"), btn=document.getElementById("dataReload"); if(!el) return;
-  el.className=DATA.status==="ok"?"ok":DATA.status==="fail"?"fail":"";
+  el.className=DATA.status==="ok"&&!(DATA.pre&&PRE_STALE)?"ok":DATA.status==="fail"||(DATA.pre&&PRE_STALE)?"fail":"";
   const n=Object.keys(DATA.mu).length, p=DATA.pending.size;
   const od = DATA.status==="loading" ? "OpenDota: загрузка…"
-    : DATA.status==="ok" ? (DATA.pre?`статистика ✓ обновлена ${DATA.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · OpenDota${SZ.pre?" + STRATZ":""}`:`OpenDota ✓ ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}${p?" (матчапы грузятся: "+p+")":""}`)
+    : DATA.status==="ok" ? (DATA.pre?(PRE_STALE?`статистика от ${DATA.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — устарела, автообновление не приходит больше 5 дней`:`статистика ✓ обновлена ${DATA.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`)+` · OpenDota${SZ.pre?" + STRATZ"+(Date.now()-SZ.updated>2*864e5?` (от ${SZ.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit"})} — STRATZ не отвечает)`:""):""}`:`OpenDota ✓ ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}${p?" (матчапы грузятся: "+p+")":""}`)
     : DATA.status==="fail" ? "нет связи с OpenDota — встроенная модель" : "статистика не загружена";
-  const sz = SZ.pre ? "" : SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
+  const sz = SZ.pre ? (DATA.pre?"":` · STRATZ ✓ (данные от ${SZ.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit"})}${PRE_STALE?", устарели":""})`) : SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
     : SZ.status==="loading" ? " · STRATZ: загрузка…" : SZ.status==="fail" ? " · STRATZ: ошибка" : " · STRATZ не подключён";
   el.textContent = od+sz;
   btn.hidden = DATA.status==="loading" || (DATA.status==="ok"&&DATA.pre);   // данные обновляются сами раз в 8 часов
@@ -1042,7 +1064,27 @@ function unavailable(){return new Set(S.draft.filter(x=>x!=null&&x>=0))}
 /* ===== КОМАНДА И РАЗВЕДКА ===== */
 const TEAM_KEY="cm_team", USE_KEY="cm_use", SHARED_CODE="aqueer-shared-team";
 const emptyPlayer=pos=>({nick:"",acc:"",pos,heroes:[],stats:{}});
-function loadTeam(){try{const t=JSON.parse(localStorage.getItem(TEAM_KEY));if(t&&Array.isArray(t.players))return t}catch(e){}
+/* данные команды общие и их может перезаписать любой посетитель (или старая версия сайта) —
+   приводим их к правильному виду, чтобы кривая запись не ломала сайт у всех */
+function normTeam(d){
+  const t=(d&&typeof d==="object"&&!Array.isArray(d))?d:{};
+  const str=(v,n)=>typeof v==="string"?v.slice(0,n):typeof v==="number"&&isFinite(v)?String(v).slice(0,n):"";
+  const names=a=>Array.isArray(a)?[...new Set(a.filter(n=>typeof n==="string"&&BYNAME[n]!=null))]:[];
+  const obj=v=>v&&typeof v==="object"&&!Array.isArray(v)?v:{};
+  const players=(Array.isArray(t.players)?t.players:[]).filter(p=>p&&typeof p==="object").slice(0,10).map((p,k)=>{
+    const heroes=names(p.heroes).slice(0,60), pos=Math.round(+p.pos);
+    return {...p, nick:str(p.nick,24), acc:str(p.acc,64), pos:pos>=1&&pos<=5?pos:Math.min(5,k+1), heroes, top:names(p.top).filter(n=>heroes.includes(n)), stats:obj(p.stats)};
+  });
+  const drafts={};
+  Object.entries(obj(t.drafts)).slice(-3000).forEach(([k,v])=>{ if(!v||typeof v!=="object") return; const o={};
+    if(typeof v.tok==="string") o.tok=v.tok.slice(0,80); if(typeof v.name==="string") o.name=v.name.slice(0,80);
+    if(typeof v.del==="boolean") o.del=v.del; if(v.res==="win"||v.res==="loss"||v.res===null) o.res=v.res; drafts[String(k).slice(0,64)]=o });
+  const opps=(Array.isArray(t.opps)?t.opps:[]).filter(o=>o&&typeof o==="object").slice(0,50).map(o=>({...o, name:str(o.name,60),
+    players:(Array.isArray(o.players)?o.players:[]).filter(x=>x&&typeof x==="object").slice(0,10).map(x=>({...x, name:str(x.name,40), acc:str(x.acc,64),
+      heroes:(Array.isArray(x.heroes)?x.heroes:[]).filter(y=>y&&typeof y.h==="string"&&BYNAME[y.h]!=null).map(y=>({h:y.h,g:Math.max(0,+y.g||0),w:Math.max(0,+y.w||0)}))}))}));
+  return {...t, code:str(t.code,64), name:str(t.name,60), players, opps, activeOpp:opps.some(o=>o.id===t.activeOpp)?t.activeOpp:null, drafts};
+}
+function loadTeam(){try{const t=JSON.parse(localStorage.getItem(TEAM_KEY));if(t&&Array.isArray(t.players))return normTeam(t)}catch(e){}
   return {code:"",name:"",players:[1,2,3,4,5].map(emptyPlayer),opps:[],activeOpp:null}}
 let TEAM=loadTeam();
 let USE=(()=>{try{return {pool:true,scout:true,...JSON.parse(localStorage.getItem(USE_KEY)||"{}")}}catch(e){return {pool:true,scout:true}}})();
@@ -1084,7 +1126,7 @@ function poolThreat(x){
   TEAM.players.forEach(p=>{
     if(!open.has(+p.pos)) return;                      // позиция игрока уже закрыта — его пул не важен
     p.heroes.forEach(n=>{const h=BYNAME[n]; if(h==null||h===x||un.has(h)) return;
-      const c=CTR[x][h]; if(c<0.5) return;
+      const c=CTR[x][h]; if(c<0.4) return;
       const w=(p.top||[]).includes(n)?1:0.55, k=c*w;
       if(!best[h]||best[h].k<k) best[h]={h,c,k,top:w===1,nick:p.nick||"поз. "+p.pos};
     });
@@ -1100,8 +1142,8 @@ const threatText=t=>"мешает: "+t.list.slice(0,3).map(r=>HEROES[r.h].ab+(r.
 function poolClash(id){
   const allies=picks("P").filter(a=>a!==id); if(!allies.length) return null;
   const pairs=allies.map(a=>[a,(SYN[id][a]+SYN[a][id])/2]), total=pairs.reduce((s,x)=>s+x[1],0), worst=Math.min(...pairs.map(x=>x[1]));
-  if(worst>-0.4&&total>-0.6) return null;
-  return pairs.filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]).map(x=>HEROES[x[0]].name);
+  if(worst>-0.25&&total>-0.4) return null;
+  return pairs.filter(x=>x[1]<=-0.2).sort((a,b)=>a[1]-b[1]).map(x=>HEROES[x[0]].name);
 }
 let WARM_BUSY=false; const WARM_TRIED=new Set();
 async function warmPool(){                             // матчапы героев пула нужны, чтобы видеть их контрпики
@@ -1166,17 +1208,16 @@ function needBonus(id,allies,enemies){
 function evalHero(id,team){
   const allies=picks(team),enemies=picks(other(team)),h=HEROES[id];
   const before=bestAssign(allies).score, after=bestAssign([...allies,id]).score;
-  const d=after-before; const role=d*0.4;
+  const d=after-before; const role=d*MODEL.role;
   const syn=allies.reduce((s,a)=>s+(SYN[id][a]+SYN[a][id])/2,0);
   const ctr=enemies.reduce((s,e)=>s+CTR[id][e],0);
   const thr=enemies.reduce((s,e)=>s+CTR[e][id],0);
   const need=needBonus(id,allies,enemies);
   const cf = team==="P" ? poolBonus(id) : scoutBonus(id);
-  // та же формула, что у итогового прогноза: насколько этот пик сдвигает разницу оценок пятёрок
-  const en=profile(enemies), comp=compOf(profile([...allies,id]),en).comp-compOf(profile(allies),en).comp;
-  const enComp=compOf(en,profile([...allies,id])).comp-compOf(en,profile(allies)).comp;   // например, наш инвиз требует от них детект
-  const total=h.meta*0.6+role+syn+ctr*0.9-thr*0.9+comp-enComp+cf.v;
-  return {total,meta:h.meta,role,syn,ctr,thr,need,offrole:d<0,comfort:cf.v,comfortWho:cf.who};
+  // та же формула, что у итогового прогноза: насколько этот пик сдвигает разницу оценок пятёрок (в % шанса)
+  const str=heroStr(id);
+  const total=str+role+syn+ctr-thr+cf.v;
+  return {total,meta:h.meta,str,role,syn,ctr,thr,need,offrole:d<0,comfort:cf.v,comfortWho:cf.who};
 }
 const banValue=(id,team)=>evalHero(id,other(team)).total;
 /* какие позиции у команды ещё свободны и встаёт ли герой на одну из них */
@@ -1200,7 +1241,7 @@ function shortReason(id,team,act){
     const opp=other(team),e=evalHero(id,opp),bits=[],us=team==="P";
     if(us){const ps=protectScore(id); if(ps.w>=0.35) bits.push(threatText(ps.t))}
     if(e.comfort>0.3) bits.push(us?"у них: "+e.comfortWho:"наш пул: "+e.comfortWho);
-    if(e.syn>1) bits.push(us?"связка у соперника":"наша связка");
+    if(e.syn>0.4) bits.push(us?"связка у соперника":"наша связка");
     if(e.ctr>1) bits.push(us?"контрит "+L().ours:"контрит их пики");
     if(e.meta>1.2) bits.push("сильная мета");
     if(e.need.length) bits.push(us?"закрывает дыру соперника":"закрывает нашу дыру");
@@ -1210,9 +1251,9 @@ function shortReason(id,team,act){
   const allies=picks(team),enemies=picks(other(team));
   if(e.comfort>0.3) bits.push(team==="P"?"пул: "+e.comfortWho:"играет: "+e.comfortWho);
   const bs=allies.map(a=>[a,SYN[id][a]]).sort((x,y)=>y[1]-x[1])[0];
-  if(bs&&bs[1]>=0.8) bits.push("с "+HEROES[bs[0]].ab);
+  if(bs&&bs[1]>=0.2) bits.push("с "+HEROES[bs[0]].ab);
   const bc=enemies.map(x=>[x,CTR[id][x]]).sort((x,y)=>y[1]-x[1])[0];
-  if(bc&&bc[1]>=0.8) bits.push("контрит "+HEROES[bc[0]].ab);
+  if(bc&&bc[1]>=0.6) bits.push("контрит "+HEROES[bc[0]].ab);
   if(e.need.length) bits.push(e.need[0][1]);
   if(e.meta>1.2&&bits.length<2) bits.push("сильная мета");
   if(!bits.length) bits.push("позиции: "+HEROES[id].pos.join("/"));
@@ -1251,7 +1292,11 @@ function commit(id,team){
   S.selPos=null; S.selFor=null;
   S.log.push({i,team,act,id,g});
   if(!S.draftId) S.draftId=newDraftId();
-  if(done()){ const rec=recordFromState(); histUpsert(rec); dbInsert(rec); ownDraft(rec.id,{tok:histLoad().find(x=>x.id===rec.id).tok}); }
+  if(done()){ const rec=recordFromState(), old=S.replaces;
+    if(old){                                      // драфт переделан после отмены хода: новая запись заменяет старую
+      const om=ownMeta(old)||{}, ol=histLoad().find(x=>x.id===old)||{}; rec.name=om.name||ol.name||""; rec.res=("res" in om?om.res:ol.res)||null;
+      histSave(histLoad().filter(x=>x.id!==old)); ownDraft(old,{del:true}); S.replaces=null }
+    histUpsert(rec); dbInsert(rec); ownDraft(rec.id,{tok:histLoad().find(x=>x.id===rec.id).tok,...(rec.name?{name:rec.name}:{}),...(rec.res?{res:rec.res}:{})}); }
   if(!setLockAfter&&act==="P"&&id>=0&&team==="P"){
     // герой из пула команды встаёт на позицию своего игрока, если она ещё свободна
     const taken=new Set(picks("P").filter(x=>x!==id&&S.locks[x]).map(x=>S.locks[x]));
@@ -1287,6 +1332,7 @@ function undo(){
   if(!S.history.length) return;
   clearTimeout(S.aiTimer);
   const h=JSON.parse(S.history.pop());
+  if(done()){ S.replaces=S.replaces||S.draftId; S.draftId=newDraftId() }   // законченный драфт уже в истории — переделанный сохранится отдельной записью
   S.draft=h.draft;S.step=h.step;S.log=h.log;S.reserve=h.reserve;if(h.order)S.order=h.order;S.locks=h.locks||{};S.sel=null;S.stepLeft=STEP_TIME(S.step);
   render(); scheduleAI();
 }
@@ -1295,7 +1341,7 @@ function newDraft(){
   S.playerSide=$("#setSide").value; S.diff=$("#setDiff").value;
   const o=$("#setOrder").value; S.playerFirst=o==="first"?true:o==="second"?false:Math.random()<.5;
   S.timer=!MAN()&&$("#setTimer").checked;
-  S.order=AP()?orderAP():null; S.draft=Array(ORD().length).fill(null);S.step=0;S.sel=null;S.selPos=null;S.locks={};S.log=[];S.history=[];S.draftId=newDraftId();
+  S.order=AP()?orderAP():null; S.draft=Array(ORD().length).fill(null);S.step=0;S.sel=null;S.selPos=null;S.locks={};S.log=[];S.history=[];S.draftId=newDraftId();S.replaces=null;
   S.reserve={P:RESERVE,A:RESERVE};S.stepLeft=STEP_TIME(0);
   render(); scheduleAI();
 }
@@ -1428,7 +1474,7 @@ function renderDetail(){
     ? {syn:"С "+ourName, ctr:"Контрит врагов", thr:"Опасны для него"}
     : {syn:"С "+ourName, ctr:"Контрит "+L().ours, thr:(MAN()?"Наши":"Твои")+", кто его контрит"};
   const reasons=(rs)=>rs.sort((a,b)=>b[0]-a[0]).map(x=>x[1]).join(", ");
-  const synR=me.map(a=>[a,SYN[id][a],[synNote(id,a),reasons(synRules(h,HEROES[a]))].filter(Boolean).join("; ")]).filter(x=>Math.abs(x[1])>=0.3).sort((a,b)=>b[1]-a[1]);
+  const synR=me.map(a=>[a,SYN[id][a],[synNote(id,a),reasons(synRules(h,HEROES[a]))].filter(Boolean).join("; ")]).filter(x=>Math.abs(x[1])>=0.15).sort((a,b)=>b[1]-a[1]);
   const withData=(r,a,b)=>[dataNote(a,b),r].filter(Boolean).join("; ");
   const ctrR=en.map(e=>[e,CTR[id][e],withData(reasons(ctrRules(h,HEROES[e])),id,e)]).filter(x=>x[1]>=0.3).sort((a,b)=>b[1]-a[1]);
   const thrR=en.map(e=>[e,-CTR[e][id],withData(reasons(ctrRules(HEROES[e],h)),e,id)]).filter(x=>x[1]<=-0.3).sort((a,b)=>a[1]-b[1]);
@@ -1443,7 +1489,7 @@ function renderDetail(){
   </div>
   ${banView&&actor==="P"?(()=>{const t=poolThreat(id); return t.list.length?`<div style="font-size:13px"><span style="color:var(--gold)">Мешает нашему пулу:</span> ${t.list.map(r=>esc(HEROES[r.h].name+(r.top?" ★":"")+" ("+r.nick+")")).join(", ")}</div>`:""})():""}
   ${banView?`<div class="muted" style="font-size:13px">Сейчас бан — показано, насколько герой усилил бы ${persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютер")}.</div>`:""}
-  <div class="score">${banView?"ценность бана":"для "+(persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютера"))} <b>${eP.total.toFixed(1)}</b> · мета ${fmt(eP.meta)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.need.length?" · "+esc(eP.need.map(x=>x[1]).join(", ")):""}</div>
+  <div class="score">${banView?"ценность бана":"для "+(persp==="P"?(MAN()?"нас":"тебя"):(MAN()?"соперника":"компьютера"))} <b>${eP.total.toFixed(1)}</b> · сила ${fmt(eP.str)} · роль ${fmt(eP.role)}${eP.offrole?" (вне роли)":""} · синергия ${fmt(eP.syn)} · контр ${fmt(eP.ctr)} · угроза ${fmt(-eP.thr)}${eP.comfort?" · пул "+fmt(eP.comfort):""}</div>
   <div class="score">${banView?"сам бы его взял":"для другой стороны"} <b>${eA.total.toFixed(1)}</b>${eA.offrole?" · не по ролям":""}</div>
   <div class="actions">${un?`<span class="muted">Герой уже занят или забанен</span>`:myTurn?`<button class="btn primary" id="confirmBtn">${act==="B"?"Забанить":"Пикнуть"} ${esc(h.ab)}${forOpp?" за соперника":""}</button>`:`<span class="muted">Сейчас ход компьютера</span>`}</div>`;
   const cb=$("#confirmBtn"); if(cb) cb.onclick=playerConfirm;
@@ -1566,13 +1612,13 @@ function logHTML(){
 function teamScore(team){
   const ids=picks(team),en=picks(other(team)),a=bestAssign(ids),p=profile(ids),pe=profile(en);
   let syn=0;const synPairs=[];
-  for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){const v=(SYN[ids[i]][ids[j]]+SYN[ids[j]][ids[i]])/2;syn+=v;if(v>=0.8||v<=-0.8)synPairs.push([ids[i],ids[j],v])}
+  for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){const v=(SYN[ids[i]][ids[j]]+SYN[ids[j]][ids[i]])/2;syn+=v;if(v>=0.25||v<=-0.25)synPairs.push([ids[i],ids[j],v])}
   let ctr=0;const ctrPairs=[];
-  ids.forEach(x=>en.forEach(y=>{const v=CTR[x][y];ctr+=v;if(v>=1.2)ctrPairs.push([x,y,v])}));
-  const meta=ids.reduce((s,id)=>s+HEROES[id].meta,0);
-  const {checks,comp}=compOf(p,pe);
-  const role=(a.score-12)*0.4;
-  return {total:meta*0.6+syn+ctr*0.9+comp+role,meta,syn,ctr,comp,role,checks,synPairs,ctrPairs,assign:a,ids};
+  ids.forEach(x=>en.forEach(y=>{const v=CTR[x][y];ctr+=v;if(v>=0.8)ctrPairs.push([x,y,v])}));
+  const meta=ids.reduce((s,id)=>s+HEROES[id].meta,0), str=ids.reduce((s,id)=>s+heroStr(id),0);
+  const {checks,comp}=compOf(p,pe);               // состав — для справки, в прогноз не входит
+  const role=(a.score-12)*MODEL.role;
+  return {total:str+syn+ctr+role,str,meta,syn,ctr,comp,role,checks,synPairs,ctrPairs,assign:a,ids};
 }
 function compOf(p,pe){                             // проверки состава: что закрыто, что нет
   const checks=[
@@ -1589,31 +1635,32 @@ function renderAnalysis(){
   if(!done()){w.hidden=true;w.style.display="none";w.innerHTML="";return}
   w.hidden=false; w.style.display=""; w.innerHTML=analysisHTML();
 }
-const WP_SCALE=18;   // откалибровано по 200 драфтам ИИ против ИИ: обычная разница даёт 55–60%, крайние случаи — около 75%
-function winProb(){const P=teamScore("P"),A=teamScore("A");const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;const pr=1/(1+Math.exp(-(radT.total-dirT.total)/WP_SCALE));return sideOf("P")==="rad"?pr:1-pr}
+const radProb=(radT,dirT)=>1/(1+Math.exp(-(radT.total-dirT.total+MODEL.side)/MODEL.scale));   // у Radiant небольшое преимущество стороны (~53%)
+function winProb(){const P=teamScore("P"),A=teamScore("A");const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;const pr=radProb(radT,dirT);return sideOf("P")==="rad"?pr:1-pr}
 function analysisHTML(){
   const P=teamScore("P"),A=teamScore("A");
   const radT=sideOf("P")==="rad"?P:A, dirT=sideOf("P")==="rad"?A:P;
-  const pr=1/(1+Math.exp(-(radT.total-dirT.total)/WP_SCALE));
+  const pr=radProb(radT,dirT);
   const card=(t,label)=>{
     const order=t.ids.map((id,k)=>[t.assign.map[k],id]).sort((a,b)=>a[0]-b[0]);
     return `<div class="card"><h4>${label}</h4>
     <div class="lineup">${order.map(([p,id])=>`<div><span class="p">${p}</span><span>${esc(HEROES[id].name)}</span>${fit(HEROES[id],p)<0?'<span class="neg" style="font-size:12px">вне роли</span>':""}</div>`).join("")}</div>
-    <div class="score">итог <b>${t.total.toFixed(1)}</b> · мета ${fmt(t.meta*0.6)} · синергия ${fmt(t.syn)} · контрпики ${fmt(t.ctr*0.9)} · состав ${fmt(t.comp)} · роли ${fmt(t.role)}</div>
+    <div class="score">итог <b>${t.total.toFixed(1)}</b> · сила героев ${fmt(t.str)} · матчапы ${fmt(t.ctr)} · синергия ${fmt(t.syn)} · роли ${fmt(t.role)}</div>
+    <div class="sub">Состав (для справки, на прогноз не влияет)</div>
     <div class="check">${t.checks.map(([n,ok])=>`<span class="${ok?"pos":"neg"}">${ok?"✓":"✗"}</span><span>${n}</span>`).join("")}</div>
     ${t.synPairs.length?`<div class="sub">Связки</div><div class="muted">${t.synPairs.sort((a,b)=>b[2]-a[2]).map(([a,b,v])=>`<span class="${v>0?"pos":"neg"}">${esc(HEROES[a].ab)} + ${esc(HEROES[b].ab)}</span>`).join(", ")}</div>`:""}
     ${t.ctrPairs.length?`<div class="sub">Ключевые контрпики</div><div class="muted">${t.ctrPairs.sort((a,b)=>b[2]-a[2]).slice(0,6).map(([a,b])=>`${esc(HEROES[a].ab)} → ${esc(HEROES[b].ab)}`).join(", ")}</div>`:""}
     </div>`};
   const graded=S.log.filter(e=>e.g);const avg=graded.length?graded.reduce((s,e)=>s+e.g.rank,0)/graded.length:0;
   const me=teamScore("P"), op=teamScore("A");
-  const parts=[["мета",me.meta*0.6-op.meta*0.6],["синергия",me.syn-op.syn],["контрпики",me.ctr*0.9-op.ctr*0.9],["состав",me.comp-op.comp],["роли",me.role-op.role]];
+  const parts=[["сила героев",me.str-op.str],["матчапы",me.ctr-op.ctr],["синергия",me.syn-op.syn],["роли",me.role-op.role],["сторона",sideOf("P")==="rad"?MODEL.side:-MODEL.side]];
   const plus=parts.filter(x=>x[1]>=1).sort((a,b)=>b[1]-a[1]), minus=parts.filter(x=>x[1]<=-1).sort((a,b)=>a[1]-b[1]);
   const why=`${minus.length?`Уступаем: ${minus.map(([n,v])=>n+" "+v.toFixed(1)).join(", ")}. `:""}${plus.length?`Выигрываем: ${plus.map(([n,v])=>n+" +"+v.toFixed(1)).join(", ")}.`:""}`;
   return `<div class="analysis"><div class="card verdict"><h4>Прогноз модели</h4>
     <div class="wbar"><div class="r" style="width:${(pr*100).toFixed(0)}%">Radiant ${(pr*100).toFixed(0)}%</div><div class="d" style="width:${(100-pr*100).toFixed(0)}%">${(100-pr*100).toFixed(0)}% Dire</div></div>
     <div class="muted">${MAN()?"Наша":"Твоя"} сторона: ${sideOf("P")==="rad"?"Radiant":"Dire"}. Средний ранг ${MAN()?"ходов (обеих команд)":"твоих ходов"} по модели: ${avg?avg.toFixed(1):"—"} (1 = лучший вариант).</div>
     ${why?`<div style="margin-top:6px">${why}</div>`:""}
-    <div class="muted" style="font-size:13px;margin-top:6px">Ранг хода показывает, насколько выбор был хорош среди героев, доступных в тот момент. Прогноз сравнивает итоговые пятёрки целиком. Если соперник тоже ходил сильно, забрал более сильных по мете героев или у него последний пик, можно сделать все ходы хорошо и всё равно уступать.</div></div>
+    <div class="muted" style="font-size:13px;margin-top:6px">Числа — примерно проценты шанса на победу. Модель проверена на 7 903 реальных матчах Divine–Immortal: угадывает исход по одному драфту в 56–57% случаев, остальное решает игра. Ранг хода показывает, насколько выбор был хорош среди героев, доступных в тот момент. Прогноз сравнивает итоговые пятёрки целиком: если соперник тоже ходил сильно или у него последний пик, можно сделать все ходы хорошо и всё равно немного уступать.</div></div>
     <div class="ateams">${card(radT,"Radiant"+(sideOf("P")==="rad"?(MAN()?" · мы":" · ты"):""))}${card(dirT,"Dire"+(sideOf("P")==="dire"?(MAN()?" · мы":" · ты"):""))}</div></div>`;
 }
 
@@ -1639,6 +1686,8 @@ function histUpsert(rec){
 }
 function validRecord(r){
   if(!r||typeof r.id!=="string"||!Array.isArray(r.draft)||!["ai","manual","allpick"].includes(r.mode)) return false;
+  if(!isFinite(r.t)||!["rad","dire"].includes(r.side)) return false;
+  if(r.log&&!(Array.isArray(r.log)&&r.log.every(e=>e&&Number.isInteger(e.i)&&e.i>=0&&e.i<r.draft.length&&["P","A","N"].includes(e.team)&&["P","B"].includes(e.act)&&(Number.isInteger(e.id)&&e.id>=-1&&e.id<N)))) r.log=[];
   if(r.draft.length!==(r.mode==="allpick"?AP_BANS+10:24)) return false;
   if(r.mode==="allpick"&&!(typeof r.order==="string"&&r.order.length===10&&/^[FS]+$/.test(r.order))) return false;
   return r.draft.every(x=>x===null||(Number.isInteger(x)&&x>=-1&&x<N));
@@ -1673,9 +1722,10 @@ const nameToId=n=>n==null?null:n==="-"?-1:(BYNAME[n]??null);
 function toDb(r){return {id:r.id,created_at:new Date(r.t).toISOString(),mode:r.mode,side:r.side,first_pick:!!r.first,order_sides:r.order||null,edit_token:r.tok||null,
   draft:r.draft.map(idToName),log:(r.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,h:idToName(e.id),r:e.r,b:idToName(e.b),p:e.p||undefined})),author:getNick().slice(0,32)||null}}
 function fromDb(x){
-  const draft=(x.draft||[]).map(nameToId);
-  return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:x.first_pick,order:x.order_sides||undefined,res:x.result||null,draft,name:"",author:x.author||"",remote:true,
-    log:(x.log||[]).map(e=>({i:e.i,team:e.team,act:e.act,id:nameToId(e.h),r:e.r,b:nameToId(e.b),p:e.p}))};
+  x=x&&typeof x==="object"?x:{};
+  const draft=Array.isArray(x.draft)?x.draft.map(nameToId):null, int=v=>Number.isInteger(v)?v:null;
+  return {v:1,id:x.id,t:Date.parse(x.created_at),mode:x.mode,side:x.side,first:!!x.first_pick,order:x.order_sides||undefined,res:x.result==="win"||x.result==="loss"?x.result:null,draft,name:"",author:typeof x.author==="string"?x.author.slice(0,32):"",remote:true,
+    log:(Array.isArray(x.log)?x.log:[]).filter(e=>e&&typeof e==="object").map(e=>({i:int(e.i),team:e.team,act:e.act,id:nameToId(e.h),r:int(e.r),b:nameToId(e.b),p:int(e.p)}))};
 }
 // новые ключи (sb_publishable_…) передаются только в заголовке apikey; старый anon-ключ (JWT) работает так же
 const dbHeaders=()=>({apikey:DB.key,"Content-Type":"application/json"});
@@ -1854,7 +1904,7 @@ function historyDetailHTML(r){
       </div>
       <div class="rel" style="max-width:520px">
         <div class="sub">Мы / соперник</div>
-        ${row("Мета",fmt(P.meta*0.6),fmt(A.meta*0.6))}${row("Синергия",fmt(P.syn),fmt(A.syn))}${row("Контрпики",fmt(P.ctr*0.9),fmt(A.ctr*0.9))}${row("Состав",fmt(P.comp),fmt(A.comp))}${row("Роли",fmt(P.role),fmt(A.role))}
+        ${row("Сила героев",fmt(P.str),fmt(A.str))}${row("Матчапы",fmt(P.ctr),fmt(A.ctr))}${row("Синергия",fmt(P.syn),fmt(A.syn))}${row("Роли",fmt(P.role),fmt(A.role))}
       </div>
       ${worst.length?`<div class="sub">Где можно было лучше</div><div class="muted">${worst.map(e=>`ход ${e.i+1}: ${e.act==="B"?"бан":"пик"} ${esc(HEROES[e.id].name)} — #${e.g.rank}${e.g.best!=null?", модель советовала "+esc(HEROES[e.g.best].name):""}`).join("<br>")}</div>`:""}
     </div>
@@ -2010,7 +2060,7 @@ async function teamRemoteSave(){
 async function teamRemoteLoad(code){
   const r=await rpc("get_team",{p_code:code});
   if(!r.ok) throw new Error("ошибка базы "+r.status);
-  const d=await r.json(); return d&&Array.isArray(d.players)?d:null;
+  const d=await r.json(); return d&&Array.isArray(d.players)?normTeam(d):null;
 }
 const newTeamCode=()=>Array.from(crypto.getRandomValues(new Uint8Array(9)),b=>"abcdefghjkmnpqrstuvwxyz23456789"[b%31]).join("").replace(/(.{3})(?=.)/g,"$1-");
 
@@ -2025,7 +2075,7 @@ function chipHTML(name,st,del){
 function banTargetsVsUs(){
   const rows=[];
   TEAM.players.forEach(p=>p.heroes.forEach(n=>{const id=BYNAME[n]; if(id==null) return;
-    rows.push({id,nick:p.nick||"поз. "+p.pos,v:HEROES[id].meta*0.9+0.8+((p.top||[]).includes(n)?0.6:0)})}));
+    rows.push({id,nick:p.nick||"поз. "+p.pos,v:heroStr(id)+0.8+((p.top||[]).includes(n)?0.6:0)})}));
   return rows.sort((a,b)=>b.v-a.v).slice(0,8);
 }
 function banTargetsVsThem(o){
@@ -2094,7 +2144,7 @@ function wirePrep(){
   v.querySelectorAll("[data-restore]").forEach(b=>b.onclick=()=>{
     const bk=teamBackups()[+b.dataset.restore]; if(!bk) return;
     backupTeam("перед восстановлением копии");
-    const code=TEAM.code; TEAM={...bk.team, code: code||bk.team.code||""};
+    const code=TEAM.code; TEAM=normTeam({...bk.team, code: code||bk.team.code||""});
     saveTeam(); TEAM_SYNC="копия восстановлена"+(TEAM.code&&dbOn()?" и сохраняется в базу":""); renderPrep(); render();
   });
   $("#teamName").onchange=e=>{TEAM.name=e.target.value.trim().slice(0,60);saveTeam()};
@@ -2243,7 +2293,7 @@ loadStratz(false);
 /* одна общая команда на всех: без кодов, кто открыл сайт — видит и может менять пул */
 const mergeDrafts=(a,b)=>{const m={...(a||{})}; Object.entries(b||{}).forEach(([k,v])=>{m[k]={...(m[k]||{}),...v}}); return m};
 function teamApply(d,why){
-  d={...d,code:SHARED_CODE,drafts:mergeDrafts(d.drafts,TEAM.drafts)};
+  d=normTeam({...d,code:SHARED_CODE,drafts:mergeDrafts(normTeam(d).drafts,TEAM.drafts)});
   if(JSON.stringify(d)===JSON.stringify(TEAM)) return false;
   backupTeam(why); TEAM=d; saveTeam(false); render(); if(VIEW==="prep")renderPrep(); if(VIEW==="history")renderHistory();
   return true;
@@ -2508,7 +2558,9 @@ function renderReview(){
   const pr=$("#rvParse"); if(pr) pr.onclick=rvRequestParse;
   const sh=$("#rvShare"); if(sh) sh.onclick=async()=>{const url=location.origin+location.pathname+"#match="+RV.id; try{await navigator.clipboard.writeText(url);sh.textContent="Скопировано ✓"}catch(e){const i=document.createElement("input");i.value=url;i.readOnly=true;i.style.cssText="flex:1 1 260px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 8px";sh.replaceWith(i);i.select()}};
 }
-{const mh=location.hash.match(/^#match=(\d{9,12})$/); if(mh){ showView("review"); rvLoad(mh[1]) }}
+function openMatchFromHash(){const mh=location.hash.match(/^#match=(\d{9,12})$/); if(mh&&mh[1]!==String(RV.id)){ showView("review"); rvLoad(mh[1]) }}
+openMatchFromHash();
+window.addEventListener("hashchange",openMatchFromHash);   // ссылка на разбор открыта, когда сайт уже был открыт в этой вкладке
 
 </script>
 
