@@ -822,12 +822,30 @@ function recomputeMeta(h){
   h.meta=+(((wr-0.5)*100)*0.5 + pres*3 + ((pwr-0.5)*100)*0.08 + (h.live?0:h.pro)).toFixed(2);
 }
 function baseWr(id){const h=HEROES[id];return h.sz?h.sz.wr:h.live?h.live.wr/100:0.5}
+/* статистика, заранее собранная GitHub Actions (ветка data): мета и матчапы всех героев, данные STRATZ */
+const PRE_URL=(()=>{const m=location.hostname.match(/^([\w-]+)\.github\.io$/i), r=location.pathname.split("/").filter(Boolean)[0];
+  return m&&r?`https://raw.githubusercontent.com/${m[1]}/${r}/data/data.json`:"https://raw.githubusercontent.com/Grumaboy/cm-draft/data/data.json"})();
+let PRE=null;
+const PRE_P=fetchT(PRE_URL,{cache:"no-cache"},8000).then(r=>r.ok?r.json():null)
+  .then(d=>{ if(d&&d.v===1&&Date.now()-d.updated<5*24*3600e3) PRE=d; return PRE }).catch(()=>null);
+function applyPreMatchups(){
+  if(!PRE||!PRE.od||!PRE.od.mu) return 0;
+  let n=0;
+  Object.entries(PRE.od.mu).forEach(([od,rows])=>{const id=DATA.odId[od]; if(id==null) return;
+    const m={}; rows.forEach(([h,g,w])=>{const j=DATA.odId[h]; if(j!=null) m[j]={g,w}}); DATA.mu[id]=m; n++});
+  for(let i=0;i<N;i++) for(let j=0;j<N;j++) if(i!==j) updatePair(i,j);
+  return n;
+}
 async function loadHeroStats(force){
   DATA.status="loading"; renderData();
   try{
-    let c=force?null:cacheGet("od_herostats",6*3600e3), d=c&&c.d;
-    if(!d){const r=await fetch(OD+"/heroStats");if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_herostats",d);c={t:Date.now()}}
+    await PRE_P;
+    let c=null, d=null;
+    if(PRE&&PRE.od&&!force){ d=PRE.od.heroStats; c={t:PRE.updated}; DATA.pre=true }
+    else { DATA.pre=false; c=force?null:cacheGet("od_herostats",6*3600e3); d=c&&c.d;
+      if(!d){const r=await fetch(OD+"/heroStats");if(!r.ok)throw new Error(r.status);d=await r.json();cacheSet("od_herostats",d);c={t:Date.now()}} }
     applyHeroStats(d); DATA.status="ok"; DATA.updated=new Date(c.t);
+    if(DATA.pre) applyPreMatchups();
     if(force){DATA.mu={};for(let i=0;i<N;i++)CTR[i].set(CTR_R[i])}
     allPicked().forEach(id=>loadMatchups(id,force));
     setTimeout(warmPool,1500);
@@ -912,6 +930,17 @@ function applySzBase(d){
   });
 }
 async function loadStratz(force){
+  await PRE_P;
+  if(PRE&&PRE.sz&&!force){               // данные STRATZ уже собраны заранее — ключ не нужен
+    try{
+      applySzBase(PRE.sz.base); SZ.status="ok"; SZ.updated=new Date(PRE.updated); SZ.msg=""; SZ.pre=true;
+      Object.entries(PRE.sz.mu||{}).forEach(([sid,x])=>{const id=SZ.id[sid]; if(id==null) return; const vs={},wi={};
+        x.vs.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) vs[j]={g,w}}); x.with.forEach(([h,g,w])=>{const j=SZ.id[h]; if(j!=null) wi[j]={g,w}});
+        SZ.vs[id]=vs; SZ.with[id]=wi});
+      for(let i=0;i<N;i++) for(let j=0;j<N;j++) if(i!==j){updatePair(i,j); if(i<j) updateSyn(i,j)}
+      renderData(); render(); renderStratzPanel(); return;
+    }catch(e){ SZ.pre=false }
+  }
   if(!szToken()){SZ.status="off";renderData();renderStratzPanel();return}
   SZ.status="loading"; renderData(); renderStratzPanel();
   try{
@@ -947,9 +976,9 @@ function renderData(){
   el.className=DATA.status==="ok"?"ok":DATA.status==="fail"?"fail":"";
   const n=Object.keys(DATA.mu).length, p=DATA.pending.size;
   const od = DATA.status==="loading" ? "OpenDota: загрузка…"
-    : DATA.status==="ok" ? `OpenDota ✓ ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}${p?" (матчапы грузятся: "+p+")":""}`
+    : DATA.status==="ok" ? (DATA.pre?`статистика ✓ обновлена ${DATA.updated.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · OpenDota${SZ.pre?" + STRATZ":""}`:`OpenDota ✓ ${DATA.updated.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}${p?" (матчапы грузятся: "+p+")":""}`)
     : DATA.status==="fail" ? "нет связи с OpenDota — встроенная модель" : "статистика не загружена";
-  const sz = SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
+  const sz = SZ.pre ? "" : SZ.status==="ok" ? ` · STRATZ ✓ роли и синергии${SZ.pending.size?" (грузятся: "+SZ.pending.size+")":""}`
     : SZ.status==="loading" ? " · STRATZ: загрузка…" : SZ.status==="fail" ? " · STRATZ: ошибка" : " · STRATZ не подключён";
   el.textContent = od+sz;
   btn.hidden = DATA.status==="loading";
