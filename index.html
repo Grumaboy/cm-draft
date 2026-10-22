@@ -69,6 +69,7 @@ body.view-page .settings, body.view-page #timeline, body.view-page #draftBar, bo
 .pchip .star:hover{color:var(--gold)}
 .pchip.top{border-color:var(--gold)}.pchip.top .star{color:var(--gold)}
 .pchip.gone{opacity:.45}
+.sync{font-size:12px} .sync.ok{color:var(--good)} .sync.wait{color:var(--gold)} .sync.err{color:var(--bad)}
 .pacc summary{font-size:12px;color:var(--muted);cursor:pointer} .pacc input{margin-top:4px}
 .pchip.clash{border-color:var(--bad);opacity:.6;text-decoration:line-through}
 .hero.inpool::after{content:"";position:absolute;top:4px;left:4px;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px rgba(0,0,0,.6)}
@@ -1031,9 +1032,13 @@ let TEAM=loadTeam();
 let USE=(()=>{try{return {pool:true,scout:true,...JSON.parse(localStorage.getItem(USE_KEY)||"{}")}}catch(e){return {pool:true,scout:true}}})();
 const saveUse=()=>{try{localStorage.setItem(USE_KEY,JSON.stringify(USE))}catch(e){}};
 let teamSaveTimer=null;
+/* индикатор сохранения пула: виден в «Нашем пуле» и в блоке «Пул команды» на драфте */
+let SYNC={st:"",txt:""};
+const syncHTML=()=>SYNC.st?`<span class="sync ${SYNC.st}" data-sync>${esc(SYNC.txt)}</span>`:`<span class="sync" data-sync></span>`;
+function setSync(st,txt){ SYNC={st,txt}; document.querySelectorAll("[data-sync]").forEach(e=>{e.className="sync "+st; e.textContent=txt}) }
 function saveTeam(remote=true){
   try{localStorage.setItem(TEAM_KEY,JSON.stringify(TEAM))}catch(e){}
-  if(remote&&TEAM.code&&typeof dbOn==="function"&&dbOn()){clearTimeout(teamSaveTimer);teamSaveTimer=setTimeout(()=>{teamSaveTimer=null;teamRemoteSave()},1200)}
+  if(remote&&TEAM.code&&typeof dbOn==="function"&&dbOn()){setSync("wait","сохраняю…");clearTimeout(teamSaveTimer);teamSaveTimer=setTimeout(()=>{teamSaveTimer=null;teamRemoteSave()},1200)}
 }
 /* резервные копии команды: делаются перед любой перезаписью, хранятся в этом браузере */
 const TEAM_BK_KEY="cm_team_backups";
@@ -1520,7 +1525,7 @@ function renderTeamPool(){
       <div class="chips">${p.heroes.map(n=>chip(p,k,n)).join("")||'<span class="muted" style="font-size:12px">перетащи сюда героя из списка или впиши справа</span>'}</div>
       <input data-tadd="${k}" list="poolHeroNames" placeholder="+ герой" aria-label="Добавить героя">
     </div>`).join("");
-  el.innerHTML=`<div class="tp-head"><h4>Пул команды</h4><span class="muted" style="font-size:12px">${total?`героев: ${total}`:"пока пусто"}${USE.pool?"":" · галочка «Наш пул» выключена — подсказки его не учитывают"}</span><span class="muted" style="font-size:12px;color:var(--gold)">${esc(POOL_MSG)}</span><span style="flex:1"></span><button class="btn" id="tpToggle">${POOL_OPEN?"Свернуть":"Развернуть"}</button></div>
+  el.innerHTML=`<div class="tp-head"><h4>Пул команды</h4>${syncHTML()}<span class="muted" style="font-size:12px">${total?`героев: ${total}`:"пока пусто"}${USE.pool?"":" · галочка «Наш пул» выключена — подсказки его не учитывают"}</span><span class="muted" style="font-size:12px;color:var(--gold)">${esc(POOL_MSG)}</span><span style="flex:1"></span><button class="btn" id="tpToggle">${POOL_OPEN?"Свернуть":"Развернуть"}</button></div>
   ${POOL_OPEN?`<p class="muted" style="margin:4px 0 0;font-size:12px">Герои, на которых каждый из вас уверенно играет. Подсказки по нашим пикам ставят их первыми в колонке позиции игрока, ★ — коронные, у них самый высокий приоритет. В сетке героев они отмечены жёлтой точкой. Добавить: перетащи портрет на строку игрока или впиши имя. Пул общий: изменения сразу видны на всех устройствах.</p>
   <datalist id="poolHeroNames">${heroNameOptions()}</datalist>${rows}`:""}`;
   $("#tpToggle").onclick=()=>{POOL_OPEN=!POOL_OPEN;try{localStorage.setItem("cm_pool_open",POOL_OPEN?"1":"0")}catch(e){}renderTeamPool()};
@@ -1712,8 +1717,8 @@ async function setResult(id,res){
 let RES_MSG="";
 const canSetResult=r=>!!tokenOf(r.id)||histLoad().some(x=>x.id===r.id);
 function resultsHTML(list){
-  const played=list.filter(r=>r.mode!=="ai"&&(r.res==="win"||r.res==="loss"));
-  if(!played.length) return `<div class="card"><h4>Реальные результаты</h4><p class="muted" style="margin:0">Отмечай «Победа» или «Поражение» на странице разбора драфта из «Турнира» или «All Pick». Здесь появится реальный винрейт, точность прогноза модели и герои, на которых вы реально выигрываете.</p></div>`;
+  const played=list.filter(r=>r.mode==="manual"&&(r.res==="win"||r.res==="loss"));
+  if(!played.length) return `<div class="card"><h4>Реальные результаты</h4><p class="muted" style="margin:0">Отмечай «Победа» или «Поражение» на странице разбора драфта из «Турнира». Здесь появится реальный винрейт, точность прогноза модели и герои, на которых вы реально выигрываете.</p></div>`;
   const wins=played.filter(r=>r.res==="win").length;
   const pr=played.map(r=>({p:withRecord(r,()=>winProb()),w:r.res==="win"}));
   const hit=pr.filter(x=>(x.p>=0.5)===x.w).length;
@@ -1735,8 +1740,8 @@ function resultsHTML(list){
   </div>`;
 }
 
-function statsHTML(list){
-  if(!list.length) return "";
+function statsHTML(list){                         // только драфты из «Турнира»: тренировки и All Pick не смешиваем
+  if(!list.length) return `<div class="card"><h4>Статистика по турнирам</h4><p class="muted" style="margin:0">Статистика считается только по драфтам из вкладки «Турнир». Доведи такой драфт до конца — и здесь появятся цифры.</p></div>`;
   const cnt=(fn)=>{const m={};list.forEach(r=>fn(r).forEach(id=>{m[id]=(m[id]||0)+1}));return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,8)};
   const by=(team,act)=>r=>withRecord(r,()=>ORD().map((o,i)=>o.act===act&&teamOfStep(i)===team?S.draft[i]:null).filter(x=>x!=null&&x>=0));
   const block=(title,rows)=>{const mx=rows.length?rows[0][1]:1;return `<div class="card"><h4>${title}</h4>${rows.length?rows.map(([id,c])=>`<div class="stat-row">${IMG(HEROES[id],"pimg")}<span style="min-width:110px">${esc(HEROES[id].name)}</span><span class="bar"><i style="width:${c/mx*100}%"></i></span><b>${c}</b></div>`).join(""):'<span class="muted">—</span>'}</div>`};
@@ -1744,8 +1749,8 @@ function statsHTML(list){
   const avgP=probs.reduce((a,b)=>a+b,0)/probs.length;
   const ranks=list.flatMap(r=>(r.log||[]).filter(e=>e.team==="P"&&e.r).map(e=>e.r));
   const avgR=ranks.length?ranks.reduce((a,b)=>a+b,0)/ranks.length:0;
-  return `<div class="card"><div class="kpis">
-      <div class="kpi"><b>${list.length}</b><span>драфтов</span></div>
+  return `<div class="card"><h4>Статистика по турнирам</h4><p class="muted" style="margin:0;font-size:12px">Только драфты из «Турнира», без тренировок и All Pick. Список ниже — по-прежнему все драфты.</p><div class="kpis">
+      <div class="kpi"><b>${list.length}</b><span>турнирных драфтов</span></div>
       <div class="kpi"><b>${(avgP*100).toFixed(0)}%</b><span>средний прогноз за нас</span></div>
       <div class="kpi"><b>${probs.filter(p=>p>=0.5).length}</b><span>драфтов с перевесом</span></div>
       <div class="kpi"><b>${avgR?avgR.toFixed(1):"—"}</b><span>средний ранг наших ходов</span></div>
@@ -1773,7 +1778,7 @@ function historyListHTML(){
     ${dbOn()&&HREMOTE==null&&!HREMOTE_ERR?'<div class="muted">Загружаю общую историю…</div>':""}
     ${HSYNC?`<div class="${/не удалось/.test(HSYNC)?"neg":"pos"}" style="font-size:13px">${esc(HSYNC)}</div>`:""}
     ${HREMOTE_ERR?`<div class="neg" style="font-size:13px">Общая база недоступна (${esc(HREMOTE_ERR)}), показываю драфты из этого браузера.</div>`:""}
-    ${statsHTML(list)}
+    ${statsHTML(historySource().filter(r=>r.mode==="manual"))}
     <div class="hlist">${items||'<div class="card"><p class="muted" style="margin:0">Пока нет законченных драфтов. Доведи драфт до конца в «Тренировке», «Турнире» или «All Pick», и он появится здесь.</p></div>'}</div>`;
 }
 
@@ -1948,8 +1953,10 @@ async function teamRemoteSave(){
   if(!TEAM.code||!dbOn()) return;
   try{ const cur=await teamRemoteLoad(TEAM.code).catch(()=>null);          // не затираем драфты, добавленные с другого устройства
     if(cur&&cur.drafts){ const mine=teamDrafts(); Object.entries(cur.drafts).forEach(([id,v])=>{ mine[id]={...v,...(mine[id]||{})} }) }
-    const r=await rpc("save_team",{p_code:TEAM.code,p_data:TEAM}); TEAM_SYNC=r.ok?"сохранено в базе":"база не сохранила ("+r.status+")"; }
-  catch(e){ TEAM_SYNC="нет связи с базой"; }
+    const r=await rpc("save_team",{p_code:TEAM.code,p_data:TEAM}); TEAM_SYNC=r.ok?"сохранено в базе":"база не сохранила ("+r.status+")";
+    if(r.ok) setSync("ok","✓ сохранено в базе в "+new Date().toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}));
+    else setSync("err","⚠ не сохранилось (ошибка базы "+r.status+") — изменения пока только на этом устройстве"); }
+  catch(e){ TEAM_SYNC="нет связи с базой"; setSync("err","⚠ нет связи с базой — изменения пока только на этом устройстве, сохраню при следующей правке"); }
   const el=$("#teamSync"); if(el) el.textContent=TEAM_SYNC;
 }
 async function teamRemoteLoad(code){
@@ -2006,7 +2013,7 @@ function renderPrep(){
     <div class="card">
       <h4>Наша команда</h4>
       <div class="prow-in"><input id="teamName" value="${esc(TEAM.name)}" placeholder="Название команды" style="flex:1 1 200px"></div>
-      <div class="prow-in"><button class="btn" id="teamLoad">Обновить из базы</button><span class="muted" id="teamSync" style="font-size:12px">${esc(TEAM_SYNC)}</span></div>
+      <div class="prow-in"><button class="btn" id="teamLoad">Обновить из базы</button>${syncHTML()}<span class="muted" id="teamSync" style="font-size:12px">${SYNC.st?"":esc(TEAM_SYNC)}</span></div>
       <p class="muted" style="margin:0;font-size:12px">Команда и пул общие для всех: изменения сохраняются в базу сами и видны на любом устройстве, где открыт сайт.</p>
       <div class="note" style="margin:0"><b>Как добавлять героев.</b> В поле «+ герой» начни вводить имя на английском (например, «Ember» или «DK») и выбери героя из подсказки — он сразу сохранится. ☆ → ★ — коронный герой: в подсказках драфта он ставится выше остальных. × — убрать героя. То же самое можно делать прямо во время драфта в блоке «Пул команды» во вкладках «Турнир» и «All Pick» — там героя можно ещё и перетащить из сетки на строку игрока. Всё сохраняется само и видно на всех устройствах.</div>
       ${TEAM.players.map((p,k)=>[p,k]).sort((a,b)=>(+a[0].pos)-(+b[0].pos)).map(([p,k])=>playerRow(p,k)).join("")}
