@@ -69,6 +69,7 @@ body.view-page .settings, body.view-page #timeline, body.view-page #draftBar, bo
 .pchip .star:hover{color:var(--gold)}
 .pchip.top{border-color:var(--gold)}.pchip.top .star{color:var(--gold)}
 .pchip.gone{opacity:.45}
+.pacc summary{font-size:12px;color:var(--muted);cursor:pointer} .pacc input{margin-top:4px}
 .pchip.clash{border-color:var(--bad);opacity:.6;text-decoration:line-through}
 .hero.inpool::after{content:"";position:absolute;top:4px;left:4px;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px rgba(0,0,0,.6)}
 @media (max-width:720px){.tp-row{grid-template-columns:minmax(0,1fr)}}
@@ -465,7 +466,7 @@ body{background:radial-gradient(1200px 500px at 50% -120px,#1d2a38 0%,rgba(11,16
       <button class="tab on" data-mode="ai" role="tab">Тренировка</button>
       <button class="tab" data-mode="manual" role="tab">Турнир</button>
       <button class="tab" data-mode="allpick" role="tab">All Pick</button>
-      <button class="tab" data-mode="prep" role="tab">Подготовка</button>
+      <button class="tab" data-mode="prep" role="tab">Наш пул</button>
       <button class="tab" data-mode="review" role="tab">Разбор</button>
       <button class="tab" data-mode="history" role="tab">История</button>
     </div>
@@ -1051,9 +1052,8 @@ function comfortScore(g,w){ if(!g) return 0; const wr=w/g; return Math.min(1,g/1
 function poolBonus(id){
   if(!USE.pool) return {v:0,who:""};
   const o=poolOwners(id); if(!o.length) return {v:0,who:""};
-  const best=Math.max(...o.map(x=>x.st?comfortScore(x.st.g,x.st.w):0));
-  const top=o.some(x=>x.top);
-  return {v:Math.min(2.4,0.8+best*0.6+(top?0.6:0)), who:o.map(x=>x.nick+(x.top?" ★":"")).join(", ")};
+  const top=o.some(x=>x.top);                    // статистику игр не учитываем: важно, что игрок сам считает героя своим
+  return {v:top?1.4:0.8, who:o.map(x=>x.nick+(x.top?" ★":"")).join(", ")};
 }
 /* насколько вражеский герой x мешает нашему пулу: контрит героев, которых мы ещё хотим взять */
 const poolIds=()=>[...new Set(TEAM.players.flatMap(p=>p.heroes).map(n=>BYNAME[n]).filter(x=>x!=null))];
@@ -1851,7 +1851,7 @@ function showView(v){
     clearTimeout(STATES.ai.aiTimer);
     if(v==="history"){ $("#navHint").textContent=dbOn()?"общая история драфтов всех посетителей":"законченные драфты и их разбор"; renderHistory(); dbFetch(); }
     else if(v==="review"){ $("#navHint").textContent="разбор сыгранного матча по реплею"; renderReview(); }
-    else { $("#navHint").textContent="пул нашей команды и разведка соперника"; renderPrep(); }
+    else { $("#navHint").textContent="герои, на которых играет каждый из нас"; renderPrep(); }
   } else {
     if(v!==MODE) setMode(v); else { $("#navHint").textContent=MODE_HINT[v]; render(); scheduleAI(); }
   }
@@ -1970,7 +1970,7 @@ function chipHTML(name,st,del){
 function banTargetsVsUs(){
   const rows=[];
   TEAM.players.forEach(p=>p.heroes.forEach(n=>{const id=BYNAME[n]; if(id==null) return;
-    const st=p.stats&&p.stats[n]; rows.push({id,nick:p.nick||"поз. "+p.pos,v:HEROES[id].meta*0.9+0.8+(st?comfortScore(st.g,st.w)*0.6:0)})}));
+    rows.push({id,nick:p.nick||"поз. "+p.pos,v:HEROES[id].meta*0.9+0.8+((p.top||[]).includes(n)?0.6:0)})}));
   return rows.sort((a,b)=>b.v-a.v).slice(0,8);
 }
 function banTargetsVsThem(o){
@@ -1981,15 +1981,17 @@ function banTargetsVsThem(o){
 }
 function renderPrep(){
   const v=$("#prepView"), o=activeOpp();
+  const prepChip=(p,k,n)=>{const id=BYNAME[n]; if(id==null) return ""; const h=HEROES[id], top=(p.top||[]).includes(n);
+    return `<span class="hchip pchip${top?" top":""}" title="${esc(n)}${top?" — коронный":""}"><button class="star" data-pstar="${esc(n)}" aria-label="${top?"Убрать из коронных":"Сделать коронным"}">${top?"★":"☆"}</button>${IMG(h)}${esc(h.name)}<button data-del="${esc(n)}" aria-label="Убрать ${esc(n)}">×</button></span>`};
   const playerRow=(p,k)=>`<div class="player" data-k="${k}">
       <div class="prow-in">
-        <input data-f="nick" value="${esc(p.nick)}" placeholder="Ник" style="width:130px">
-        <select data-f="pos">${[1,2,3,4,5].map(x=>`<option value="${x}"${+p.pos===x?" selected":""}>Поз. ${x} · ${POSNAME[x]}</option>`).join("")}</select>
-        <input data-f="acc" value="${esc(p.acc)}" placeholder="Steam ID или ссылка на opendota/dotabuff" style="flex:1 1 200px">
-        <button class="btn" data-act="pull">Подтянуть героев</button>
+        <select data-f="pos" aria-label="Позиция">${[1,2,3,4,5].map(x=>`<option value="${x}"${+p.pos===x?" selected":""}>Поз. ${x} · ${POSNAME[x]}</option>`).join("")}</select>
+        <input data-f="nick" value="${esc(p.nick)}" placeholder="Ник" style="flex:1 1 140px">
+        <button class="btn" data-act="delp">${PREP_MSG["d"+k]?"Точно убрать?":"Убрать игрока"}</button>
       </div>
-      <div class="chips">${p.heroes.map(n=>chipHTML(n,p.stats&&p.stats[n],n)).join("")||'<span class="muted" style="font-size:12px">Герои не добавлены</span>'}</div>
-      <div class="prow-in"><input data-f="add" list="heroNames" placeholder="Добавить героя" style="width:200px"><span class="muted" style="font-size:12px">${esc(PREP_MSG["p"+k]||"")}</span></div>
+      <div class="chips">${p.heroes.map(n=>prepChip(p,k,n)).join("")||'<span class="muted" style="font-size:12px">Пока нет героев</span>'}</div>
+      <div class="prow-in"><input data-f="add" list="heroNames" placeholder="+ герой — начни вводить имя" style="flex:1 1 220px"><span class="muted" style="font-size:12px">${esc(PREP_MSG["p"+k]||"")}</span></div>
+      <details class="pacc"><summary>Steam ID — для вкладки «Разбор»</summary><input data-f="acc" value="${esc(p.acc)}" placeholder="Steam ID, Friend ID или ссылка на профиль" style="width:100%"></details>
     </div>`;
   const oppPlayer=(p,k)=>`<div class="player" data-ok="${k}">
       <div class="prow-in"><input data-of="acc" value="${esc(p.acc||"")}" placeholder="Steam ID или ссылка игрока ${k+1}" style="flex:1 1 220px">
@@ -1999,15 +2001,17 @@ function renderPrep(){
   const vsUs=banTargetsVsUs(), vsThem=o?banTargetsVsThem(o):[];
   const list=(rows,fn)=>rows.length?rows.map(r=>`<div class="stat-row">${IMG(HEROES[r.id],"pimg")}<span style="min-width:120px">${esc(HEROES[r.id].name)}</span><span class="muted" style="font-size:12px;flex:1">${esc(fn(r))}</span></div>`).join(""):'<span class="muted">—</span>';
   v.innerHTML=`<datalist id="heroNames">${heroNameOptions()}</datalist>
-  <div class="hist-head"><h2>Подготовка</h2></div>
+  <div class="hist-head"><h2>Наш пул</h2></div>
   <div class="prep-grid prep">
     <div class="card">
       <h4>Наша команда</h4>
       <div class="prow-in"><input id="teamName" value="${esc(TEAM.name)}" placeholder="Название команды" style="flex:1 1 200px"></div>
       <div class="prow-in"><button class="btn" id="teamLoad">Обновить из базы</button><span class="muted" id="teamSync" style="font-size:12px">${esc(TEAM_SYNC)}</span></div>
       <p class="muted" style="margin:0;font-size:12px">Команда и пул общие для всех: изменения сохраняются в базу сами и видны на любом устройстве, где открыт сайт.</p>
+      <div class="note" style="margin:0"><b>Как добавлять героев.</b> В поле «+ герой» начни вводить имя на английском (например, «Ember» или «DK») и выбери героя из подсказки — он сразу сохранится. ☆ → ★ — коронный герой: в подсказках драфта он ставится выше остальных. × — убрать героя. То же самое можно делать прямо во время драфта в блоке «Пул команды» во вкладках «Турнир» и «All Pick» — там героя можно ещё и перетащить из сетки на строку игрока. Всё сохраняется само и видно на всех устройствах.</div>
       ${TEAM.players.map(playerRow).join("")}
-      <p class="note" style="margin:0">«Подтянуть героев» берёт из OpenDota героев игрока за последние 180 дней (больше 3 игр). В профиле Dota должна быть включена настройка «Открыть общедоступные данные матчей». Лишних можно убрать крестиком, нужных добавить вручную.</p>
+      ${TEAM.players.length<5?`<div class="prow-in"><button class="btn" id="addPlayer">+ Добавить игрока</button></div>`:""}
+
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
       <div class="card">
@@ -2045,18 +2049,12 @@ function wirePrep(){
     row.querySelector('[data-f="nick"]').onchange=e=>{p.nick=e.target.value.trim().slice(0,24);saveTeam()};
     row.querySelector('[data-f="pos"]').onchange=e=>{p.pos=+e.target.value;saveTeam()};
     row.querySelector('[data-f="acc"]').onchange=e=>{p.acc=e.target.value.trim();saveTeam()};
-    row.querySelector('[data-f="add"]').onchange=e=>{const n=e.target.value.trim(); if(BYNAME[n]!=null&&!p.heroes.includes(n)){p.heroes.push(n);saveTeam();renderPrep()} else if(n){PREP_MSG["p"+k]="нет такого героя";renderPrep()}};
+    row.querySelector('[data-f="add"]').onchange=e=>{const hh=findHeroByText(e.target.value), n=hh&&hh.name; if(n&&!p.heroes.includes(n)){p.heroes.push(n);PREP_MSG["p"+k]="";saveTeam();setTimeout(warmPool,300);renderPrep();const ni=document.querySelector(`.player[data-k="${k}"] [data-f="add"]`);if(ni)ni.focus()} else if(n){PREP_MSG["p"+k]="уже есть";renderPrep()} else if(e.target.value.trim()){PREP_MSG["p"+k]="нет такого героя";renderPrep()}};
     row.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{p.heroes=p.heroes.filter(x=>x!==b.dataset.del);p.top=(p.top||[]).filter(x=>x!==b.dataset.del);saveTeam();renderPrep()});
-    row.querySelector('[data-act="pull"]').onclick=async()=>{
-      PREP_MSG["p"+k]="загружаю…"; renderPrep();
-      try{ const r=await fetchPlayer(p.acc); const top=r.heroes.filter(x=>x.g>3).slice(0,10);
-        p.stats=p.stats||{}; top.forEach(x=>{p.stats[x.h]={g:x.g,w:x.w}; if(!p.heroes.includes(x.h)) p.heroes.push(x.h)});
-        if(!p.nick&&r.name) p.nick=r.name.slice(0,24);
-        PREP_MSG["p"+k]=`добавлено героев: ${top.length}`; saveTeam(); }
-      catch(e){ PREP_MSG["p"+k]=e.message }
-      renderPrep();
-    };
+    row.querySelectorAll("[data-pstar]").forEach(b=>b.onclick=()=>{const n=b.dataset.pstar; p.top=p.top||[]; p.top=p.top.includes(n)?p.top.filter(x=>x!==n):[...p.top,n]; saveTeam(); renderPrep(); render()});
+    row.querySelector('[data-act="delp"]').onclick=()=>{ if(!PREP_MSG["d"+k]){PREP_MSG["d"+k]=1;renderPrep();return} backupTeam("перед удалением игрока "+(p.nick||"")); TEAM.players.splice(k,1); PREP_MSG={}; saveTeam(); renderPrep(); render() };
   });
+  const ap=$("#addPlayer"); if(ap) ap.onclick=()=>{const used=new Set(TEAM.players.map(x=>+x.pos)); TEAM.players.push(emptyPlayer([1,2,3,4,5].find(x=>!used.has(x))||1)); saveTeam(); renderPrep()};
   $("#oppSel").onchange=e=>{TEAM.activeOpp=e.target.value||null;PREP_MSG={};saveTeam();renderPrep()};
   $("#oppNew").onclick=()=>{const o={id:newDraftId(),name:"",players:[0,1,2,3,4].map(()=>({acc:"",name:"",heroes:[]}))};TEAM.opps.push(o);TEAM.activeOpp=o.id;saveTeam();renderPrep()};
   const o=activeOpp(); if(!o) return;
@@ -2192,6 +2190,13 @@ function teamApply(d,why){
   backupTeam(why); TEAM=d; saveTeam(false); render(); if(VIEW==="prep")renderPrep(); if(VIEW==="history")renderHistory();
   return true;
 }
+function teamCleanup(){                        // разово: в команде остаются пятеро основных
+  if(TEAM.cleanup1) return false;
+  const drop=new Set(["lakiden","metamorphosis"]);
+  const before=TEAM.players.length; TEAM.players=TEAM.players.filter(p=>!drop.has(String(p.nick||"").trim().toLowerCase()));
+  TEAM.cleanup1=1; if(TEAM.players.length!==before) backupTeam("перед удалением запасных игроков");
+  return true;
+}
 async function teamPull(manual){
   if(!dbOn()) return;
   try{
@@ -2203,6 +2208,7 @@ async function teamPull(manual){
     if(d&&teamHasData(d)){ teamApply(d,"перед загрузкой общей команды"); TEAM_SYNC="загружено из базы" }
     else if(teamHasData(TEAM)){ TEAM.code=SHARED_CODE; saveTeam(false); await teamRemoteSave(); TEAM_SYNC="пул перенесён в общую базу" }
     else { TEAM.code=SHARED_CODE; saveTeam(false) }
+    if(teamHasData(TEAM)&&teamCleanup()){ saveTeam(false); await teamRemoteSave(); render() }
     syncOwnDrafts();
   }catch(e){ if(manual) TEAM_SYNC=e.message||"нет связи с базой" }
   if(VIEW==="prep") renderPrep();
@@ -2254,7 +2260,7 @@ async function rvRequestParse(){
 }
 async function rvRecent(k){
   const p=TEAM.players[k]; if(!p) return;
-  let acc; try{acc=accOf(p.acc)}catch(e){RV.recent={err:"у игрока не указан Steam ID — добавь его в «Подготовке»"};RV.recentFor=k;renderReview();return}
+  let acc; try{acc=accOf(p.acc)}catch(e){RV.recent={err:"у игрока не указан Steam ID — добавь его во вкладке «Наш пул» (раздел «Steam ID»)"};RV.recentFor=k;renderReview();return}
   RV.recentFor=k; RV.recent={loading:true}; renderReview();
   try{ await odHeroSlugs(); const r=await fetchT(`${OD}/players/${acc}/recentMatches`,{},15000); if(!r.ok) throw new Error("OpenDota ответила "+r.status);
     RV.recent={list:(await r.json()).slice(0,12),acc} }
@@ -2396,7 +2402,7 @@ function renderReview(){
   const head=`<div class="hist-head"><h2>Разбор матча</h2></div>
   <div class="card rv-input">
     <div class="prow-in"><input id="rvId" value="${esc(RV.id||"")}" placeholder="Номер матча или ссылка с OpenDota / Dotabuff / STRATZ" inputmode="numeric" style="flex:1 1 260px"><button class="btn primary" id="rvGo">Разобрать</button></div>
-    ${ourBtns?`<div class="prow-in"><span class="muted" style="font-size:13px">Последние игры:</span>${ourBtns}</div>${recent}`:`<p class="muted" style="margin:0;font-size:12px">Добавь Steam ID игроков в «Подготовке» — здесь появятся их последние игры, без копирования номеров.</p>`}
+    ${ourBtns?`<div class="prow-in"><span class="muted" style="font-size:13px">Последние игры:</span>${ourBtns}</div>${recent}`:`<p class="muted" style="margin:0;font-size:12px">Добавь Steam ID игроков во вкладке «Наш пул» — здесь появятся их последние игры, без копирования номеров.</p>`}
   </div>`;
   let body="";
   if(RV.status==="loading") body='<div class="card"><p class="muted" style="margin:0">Загружаю матч из OpenDota…</p></div>';
