@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 </head>
 <body>
-<title>CM Драфт-тренажёр</title>
+<title>Драфтер</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
 <style>
@@ -69,6 +69,8 @@ body.view-page .settings, body.view-page #timeline, body.view-page #draftBar, bo
 .pchip .star:hover{color:var(--gold)}
 .pchip.top{border-color:var(--gold)}.pchip.top .star{color:var(--gold)}
 .pchip.gone{opacity:.45}
+.rs-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto 44px;gap:6px;align-items:center;font-size:13px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:3px 6px 3px 3px}
+.rs-row .pimg{width:46px} .rs-n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .rs-g{font-size:12px;color:var(--muted);white-space:nowrap} .rs-w{font-family:var(--f-mono);font-weight:500;text-align:right}
 .sync{font-size:12px} .sync.ok{color:var(--good)} .sync.wait{color:var(--gold)} .sync.err{color:var(--bad)}
 .pacc summary{font-size:12px;color:var(--muted);cursor:pointer} .pacc input{margin-top:4px}
 .pchip.clash{border-color:var(--bad);opacity:.6;text-decoration:line-through}
@@ -122,7 +124,8 @@ body.view-page .settings, body.view-page #timeline, body.view-page #draftBar, bo
 /* top navigation with mode tabs */
 .nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
 .nav-in{max-width:1500px;margin:0 auto;padding-inline:16px;display:flex;align-items:stretch;gap:8px 24px;flex-wrap:wrap}
-.nav-logo{font-family:var(--f-disp);font-weight:700;font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);align-self:center;padding-block:10px}
+.nav-logo img{display:block;height:34px;width:auto}
+.nav-logo{display:flex;align-items:center;font-family:var(--f-disp);font-weight:700;font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);align-self:center;padding-block:10px}
 .tabs{display:flex;gap:2px}
 .tab{background:none;border:0;border-bottom:3px solid transparent;padding:12px 18px 9px;font-family:var(--f-disp);font-weight:700;font-size:19px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .tab:hover{color:var(--fg)}
@@ -462,7 +465,7 @@ body{background:radial-gradient(1200px 500px at 50% -120px,#1d2a38 0%,rgba(11,16
 
 <nav class="nav">
   <div class="nav-in">
-    <span class="nav-logo">CM Драфт</span>
+    <span class="nav-logo"><img src="logo.png" alt="Драфтер" onload="this.nextElementSibling.hidden=true" onerror="this.remove()"><span>Драфтер</span></span>
     <div class="tabs" role="tablist">
       <button class="tab on" data-mode="ai" role="tab">Тренировка</button>
       <button class="tab" data-mode="manual" role="tab">Турнир</button>
@@ -477,7 +480,7 @@ body{background:radial-gradient(1200px 500px at 50% -120px,#1d2a38 0%,rgba(11,16
 </nav>
 <div class="wrap" id="appWrap">
   <div class="top">
-    <div class="brand">CM Драфт-тренажёр<small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
+    <div class="brand">Драфтер<small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
     <div class="settings">
       <button class="btn" id="setToggle" aria-expanded="false">⚙ Настройки</button>
       <div class="field"><label for="setSide">Сторона</label>
@@ -1698,7 +1701,7 @@ function historySource(){
       .concat(local.filter(r=>!rem.has(r.id)))               // ещё не попавшие в базу — тоже показываем
       .sort((a,b)=>b.t-a.t);
   }
-  list=list.filter(r=>!hidden(r.id)).map(r=>({...r,name:nameOf(r)}));
+  list=list.filter(r=>!hidden(r.id)).map(r=>{const m=ownMeta(r.id); return {...r,name:nameOf(r),...(m&&"res" in m?{res:m.res}:{})}});
   if(HSRC==="mine") return list.filter(r=>isOwn(r.id));
   return list;
 }
@@ -1706,6 +1709,7 @@ function historySource(){
 async function setResult(id,res){
   const l=histLoad(), k=l.findIndex(x=>x.id===id); const tok=tokenOf(id);
   if(k>=0){ l[k].res=res; histSave(l); }
+  ownDraft(id,{res:res||null});                   // общий результат: виден и меняется на любом устройстве
   if(HREMOTE){ const x=HREMOTE.find(r=>r.id===id); if(x) x.res=res; }
   RES_MSG="";
   if(dbOn()&&tok){
@@ -1715,7 +1719,7 @@ async function setResult(id,res){
   renderHistory();
 }
 let RES_MSG="";
-const canSetResult=r=>!!tokenOf(r.id)||histLoad().some(x=>x.id===r.id);
+const canSetResult=r=>r.mode!=="ai";            // результат матча может поставить любой — он хранится в общих данных команды
 function resultsHTML(list){
   const played=list.filter(r=>r.mode==="manual"&&(r.res==="win"||r.res==="loss"));
   if(!played.length) return `<div class="card"><h4>Реальные результаты</h4><p class="muted" style="margin:0">Отмечай «Победа» или «Поражение» на странице разбора драфта из «Турнира». Здесь появится реальный винрейт, точность прогноза модели и герои, на которых вы реально выигрываете.</p></div>`;
@@ -1724,9 +1728,12 @@ function resultsHTML(list){
   const hit=pr.filter(x=>(x.p>=0.5)===x.w).length;
   const fav=pr.filter(x=>x.p>=0.5), dog=pr.filter(x=>x.p<0.5);
   const wr=a=>a.length?Math.round(a.filter(x=>x.w).length/a.length*100)+"% ("+a.length+")":"—";
-  const hm={};
-  played.forEach(r=>teamPicksOf(r,"P").forEach(id=>{const x=hm[id]||(hm[id]={g:0,w:0});x.g++;if(r.res==="win")x.w++}));
-  const heroes=Object.entries(hm).sort((a,b)=>b[1].g-a[1].g||b[1].w-a[1].w).slice(0,10);
+  // наши герои по позициям: сколько сыгранных матчей и процент побед
+  const byPos={1:{},2:{},3:{},4:{},5:{}};
+  played.forEach(r=>withRecord(r,()=>{const ids=picks("P"), m=bestAssign(ids,S.locks).map; ids.forEach((id,k)=>{const b=byPos[m[k]]; if(!b) return; const x=b[id]||(b[id]={g:0,w:0}); x.g++; if(r.res==="win") x.w++})}));
+  const posCol=p=>{const rows=Object.entries(byPos[p]).sort((a,b)=>b[1].g-a[1].g||b[1].w/b[1].g-a[1].w/a[1].g);
+    return `<div class="pcol"><h5><span>Поз. <b>${p}</b> · ${POSNAME[p]}</span></h5>${rows.length?rows.map(([id,x])=>{const wr=Math.round(x.w/x.g*100);
+      return `<div class="rs-row">${IMG(HEROES[id],"pimg")}<span class="rs-n">${esc(HEROES[id].name)}</span><span class="rs-g">${x.g} ${x.g%10===1&&x.g%100!==11?"игра":x.g%10>=2&&x.g%10<=4&&(x.g%100<10||x.g%100>=20)?"игры":"игр"}</span><b class="rs-w ${wr>=55?"pos":wr<=45?"neg":""}">${wr}%</b></div>`}).join(""):'<span class="muted" style="font-size:12px">—</span>'}</div>`};
   return `<div class="card"><h4>Реальные результаты</h4>
     <div class="kpis">
       <div class="kpi"><b><span class="res-w">${wins}</span>–<span class="res-l">${played.length-wins}</span></b><span>победы – поражения</span></div>
@@ -1735,8 +1742,9 @@ function resultsHTML(list){
       <div class="kpi"><b>${wr(fav)}</b><span>винрейт, когда модель за нас</span></div>
       <div class="kpi"><b>${wr(dog)}</b><span>винрейт, когда модель против</span></div>
     </div>
-    <div class="sub">Наши герои в сыгранных матчах</div>
-    ${heroes.map(([id,x])=>`<div class="stat-row">${IMG(HEROES[id],"pimg")}<span style="min-width:120px">${esc(HEROES[id].name)}</span><span class="bar"><i style="width:${x.w/x.g*100}%;background:var(--good)"></i></span><b>${x.w}–${x.g-x.w}</b></div>`).join("")}
+    <div class="sub">Наши герои по позициям · сыграно матчей и процент побед</div>
+    <div class="pcols">${[1,2,3,4,5].map(posCol).join("")}</div>
+    <p class="muted" style="margin:0;font-size:12px">Считаются только турнирные драфты с отмеченным результатом. Чем больше матчей у героя, тем надёжнее процент — 1–2 игры ещё ничего не говорят.</p>
   </div>`;
 }
 
