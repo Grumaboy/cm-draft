@@ -2009,7 +2009,7 @@ function renderPrep(){
       <div class="prow-in"><button class="btn" id="teamLoad">Обновить из базы</button><span class="muted" id="teamSync" style="font-size:12px">${esc(TEAM_SYNC)}</span></div>
       <p class="muted" style="margin:0;font-size:12px">Команда и пул общие для всех: изменения сохраняются в базу сами и видны на любом устройстве, где открыт сайт.</p>
       <div class="note" style="margin:0"><b>Как добавлять героев.</b> В поле «+ герой» начни вводить имя на английском (например, «Ember» или «DK») и выбери героя из подсказки — он сразу сохранится. ☆ → ★ — коронный герой: в подсказках драфта он ставится выше остальных. × — убрать героя. То же самое можно делать прямо во время драфта в блоке «Пул команды» во вкладках «Турнир» и «All Pick» — там героя можно ещё и перетащить из сетки на строку игрока. Всё сохраняется само и видно на всех устройствах.</div>
-      ${TEAM.players.map(playerRow).join("")}
+      ${TEAM.players.map((p,k)=>[p,k]).sort((a,b)=>(+a[0].pos)-(+b[0].pos)).map(([p,k])=>playerRow(p,k)).join("")}
       ${TEAM.players.length<5?`<div class="prow-in"><button class="btn" id="addPlayer">+ Добавить игрока</button></div>`:""}
 
     </div>
@@ -2197,6 +2197,15 @@ function teamCleanup(){                        // разово: в команд�
   TEAM.cleanup1=1; if(TEAM.players.length!==before) backupTeam("перед удалением запасных игроков");
   return true;
 }
+const ROSTER=[[1,"20:31"],[2,"Grumak"],[3,"nooway"],[4,"Anto_7"],[5,"Georgin"]];
+function teamRoster(){                         // разово: основной состав по позициям, герои и Steam ID сохраняются по нику
+  if(TEAM.roster1) return false;
+  const byNick=Object.fromEntries(TEAM.players.map(p=>[String(p.nick||"").trim().toLowerCase(),p]));
+  backupTeam("перед расстановкой основного состава");
+  TEAM.players=ROSTER.map(([pos,nick])=>{const old=byNick[nick.toLowerCase()]; return {...emptyPlayer(pos),...(old||{}),nick,pos}});
+  TEAM.roster1=1; TEAM.cleanup1=1;
+  return true;
+}
 async function teamPull(manual){
   if(!dbOn()) return;
   try{
@@ -2208,7 +2217,7 @@ async function teamPull(manual){
     if(d&&teamHasData(d)){ teamApply(d,"перед загрузкой общей команды"); TEAM_SYNC="загружено из базы" }
     else if(teamHasData(TEAM)){ TEAM.code=SHARED_CODE; saveTeam(false); await teamRemoteSave(); TEAM_SYNC="пул перенесён в общую базу" }
     else { TEAM.code=SHARED_CODE; saveTeam(false) }
-    if(teamHasData(TEAM)&&teamCleanup()){ saveTeam(false); await teamRemoteSave(); render() }
+    if(teamRoster()|(teamHasData(TEAM)&&teamCleanup())){ saveTeam(false); await teamRemoteSave(); render() }
     syncOwnDrafts();
   }catch(e){ if(manual) TEAM_SYNC=e.message||"нет связи с базой" }
   if(VIEW==="prep") renderPrep();
