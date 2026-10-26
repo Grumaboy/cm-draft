@@ -472,26 +472,137 @@ body{background:radial-gradient(1200px 500px at 50% -120px,#1d2a38 0%,rgba(11,16
   #mbar .btn{padding:9px 12px}
 }
 @media (prefers-reduced-motion:no-preference){.hero,.tl{transition:opacity .15s,border-color .15s}}
+
+/* ===== стеклянная тема: матовые панели поверх размытых свечений Radiant / Dire / золота ===== */
+:root{
+  --glass:rgba(36,44,58,.38); --sheen:linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.015) 60%); --glass2:rgba(255,255,255,.055); --glass-hi:rgba(255,255,255,.10);
+  --glass-line:rgba(255,255,255,.10); --glass-top:rgba(255,255,255,.16);
+  --blur:blur(22px) saturate(150%); --r-lg:18px; --r-md:12px; --r-sm:9px;
+  --panel:rgba(24,30,40,.55); --panel2:rgba(255,255,255,.06); --line:rgba(255,255,255,.10);
+}
+html{background:#06080c}
+body{background:transparent!important}
+body::before{content:"";position:fixed;inset:-12%;z-index:-2;pointer-events:none;
+  background:
+    radial-gradient(38% 42% at 18% 22%,rgba(224,156,60,.65),transparent 70%),
+    radial-gradient(34% 40% at 82% 30%,rgba(214,78,58,.55),transparent 70%),
+    radial-gradient(40% 45% at 22% 88%,rgba(82,180,116,.48),transparent 70%),
+    radial-gradient(36% 40% at 78% 92%,rgba(70,118,205,.42),transparent 70%),
+    radial-gradient(60% 50% at 50% 50%,rgba(30,36,48,.9),transparent 80%),
+    #07090d;
+  filter:blur(50px);animation:glassdrift 40s ease-in-out infinite alternate}
+body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.07;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+@keyframes glassdrift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-3%,2%,0) scale(1.05)}100%{transform:translate3d(2%,-2%,0) scale(1.02)}}
+/* большие панели — стекло */
+.card,.team,.turn,.dside,.tcard,.hitem,.stz,#mbar{background:var(--sheen),var(--glass)!important;backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border:1px solid var(--glass-line)!important;border-top-color:var(--glass-top)!important;border-radius:var(--r-lg);
+  box-shadow:0 10px 40px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06)!important}
+.dside.rad{background:var(--sheen),linear-gradient(180deg,rgba(108,196,111,.18),transparent 55%),var(--glass)!important}
+.dside.dire{background:var(--sheen),linear-gradient(180deg,rgba(223,92,70,.19),transparent 55%),var(--glass)!important}
+.dside::before{left:18px;right:18px;border-radius:0 0 3px 3px}
+.dside.act.rad{box-shadow:0 0 0 1px rgba(108,196,111,.45),0 0 34px rgba(108,196,111,.22),0 10px 40px rgba(0,0,0,.35)!important}
+.dside.act.dire{box-shadow:0 0 0 1px rgba(223,92,70,.45),0 0 34px rgba(223,92,70,.22),0 10px 40px rgba(0,0,0,.35)!important}
+.card h4,.attr h3{color:#e9d3a0}
+/* плавающая навигация-«таблетка» */
+.nav{background:transparent!important;border:0!important;backdrop-filter:none;padding:10px 16px 0}
+.nav-in{background:var(--sheen),rgba(30,38,50,.45);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glass-line);border-top-color:var(--glass-top);
+  border-radius:999px;padding:6px 8px 6px 18px;align-items:center;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.nav-logo{padding-block:0}
+.tabs{gap:4px;align-items:center}
+.tab{border:0!important;border-radius:999px;padding:8px 16px 7px;font-size:17px;transition:background .2s,color .2s}
+.tab:hover{background:var(--glass2)}
+.tab.on{background:rgba(255,255,255,.92)!important;color:#0b0f15!important}
+.nav-btn{border-radius:999px}
+/* кнопки, поля, чипы */
+.btn{border-radius:999px;background:var(--glass2)!important;border:1px solid var(--glass-line)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)!important;transition:background .15s,transform .15s}
+.btn:hover{background:var(--glass-hi)!important}
+.btn.primary{background:linear-gradient(180deg,#f5d27c,#cf9a33)!important;border-color:transparent!important;color:#1b1306!important;box-shadow:0 6px 18px rgba(232,181,77,.28),inset 0 1px 0 rgba(255,255,255,.4)!important}
+select,input:not([type=checkbox]),textarea{border-radius:var(--r-md)!important;background:rgba(255,255,255,.06)!important;border:1px solid var(--glass-line)!important}
+.chip{border-radius:999px;background:var(--glass2);border-color:var(--glass-line)}
+.chip.on{background:rgba(255,255,255,.92);color:#0b0f15;border-color:transparent}
+.badge{border-radius:999px;padding:1px 8px}
+/* элементы внутри панелей */
+.prow,.slot,.rs-row,.hchip,.hundo,.hdel,.protect,.tl{border-radius:var(--r-sm)!important;background:var(--glass2)!important;border-color:var(--glass-line)!important}
+.protect{border-color:rgba(232,181,77,.35)!important}
+.prow.pool{box-shadow:inset 3px 0 0 var(--gold)}
+.hero{border-radius:10px;border-color:var(--glass-line)}
+.dpick,.dban{border-radius:10px}
+.five img,.five .ph,.mini img,.bans-row .b,.wbar{border-radius:8px}
+.wbar{overflow:hidden}
+.hero.img .nm{border-radius:0 0 10px 10px}
+/* приподнимание при наведении */
+@media (hover:hover) and (prefers-reduced-motion:no-preference){
+  .prow,.hitem,.tcard,.rs-row{transition:transform .18s ease,background .18s,border-color .18s}
+  .prow:hover,.hitem:hover,.tcard:hover{transform:translateY(-2px);background:var(--glass-hi)!important}
+}
+.hitem:hover,.tcard:hover,.prow:hover{border-color:rgba(232,181,77,.5)!important}
+/* мягкий переход между разделами */
+@keyframes viewin{from{opacity:0;filter:blur(10px);transform:translateY(8px)}to{opacity:1;filter:none;transform:none}}
+@media (prefers-reduced-motion:no-preference){ #appWrap.vt>*{animation:viewin .35s ease both} #appWrap.vt>*:nth-child(2){animation-delay:.04s} #appWrap.vt>*:nth-child(3){animation-delay:.08s} #appWrap.vt>*:nth-child(n+4){animation-delay:.12s} }
+@media (prefers-reduced-motion:reduce){ body::before{animation:none} }
+/* телефон: стекло полегче, чтобы не тормозило */
+@media (max-width:720px){
+  :root{--blur:blur(14px) saturate(140%)}
+  body::before{animation:none}   /* на телефоне фон не двигается — бережём батарею */
+  .nav{padding:6px 6px 0}
+  .nav-in{padding:4px 6px;border-radius:999px}
+  .tab{padding:7px 12px 6px;font-size:15px}
+  .card,.team,.turn,.dside,.hitem,.tcard{border-radius:14px}
+  #mbar{border-radius:18px 18px 0 0}
+}
+
+/* вертикальная панель разделов слева (на телефоне — полоса сверху) */
+body{padding-left:88px}
+.dock{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:25;padding:8px;border-radius:999px;
+  background:var(--sheen),rgba(30,38,50,.48);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border:1px solid var(--glass-line);border-top-color:var(--glass-top);box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.dock .tabs{flex-direction:column;gap:8px}
+.dock .tab{position:relative;width:46px;height:46px;padding:0!important;border-radius:50%;display:grid;place-items:center;color:#aab6c4;transition:background .2s,color .2s,transform .15s}
+.dock .tab svg{width:22px;height:22px}
+.dock .tab:hover{background:rgba(255,255,255,.10);color:#fff}
+.dock .tab.on{background:#fff!important;color:#0b0f15!important;box-shadow:0 4px 16px rgba(255,255,255,.18)}
+.dock .tlab{position:absolute;left:calc(100% + 14px);top:50%;transform:translate(-6px,-50%);opacity:0;pointer-events:none;white-space:nowrap;
+  padding:6px 14px;border-radius:999px;background:rgba(20,26,36,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--glass-line);
+  font-family:var(--f-disp);font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg);box-shadow:0 6px 20px rgba(0,0,0,.35);transition:opacity .15s,transform .15s}
+.dock .tab:hover .tlab,.dock .tab:focus-visible .tlab{opacity:1;transform:translate(0,-50%)}
+.nav-in{gap:8px 18px}
+.brand{font-size:30px}
+body.view-page .brand #pageTitle{display:none}   /* у страниц свой заголовок */
+body.view-page .brand small{margin-top:0}
+.nav-hint{font-size:14px}
+@media (max-width:720px){
+  body{padding-left:0}
+  .nav{display:none}
+  .dock{position:sticky;top:env(safe-area-inset-top,0px);left:auto;transform:none;margin:6px 6px 0;padding:4px;border-radius:999px;z-index:20}
+  .dock .tabs{flex-direction:row;gap:4px;overflow-x:auto;scrollbar-width:none}
+  .dock .tabs::-webkit-scrollbar{display:none}
+  .dock .tab{width:auto;height:auto;border-radius:999px;padding:7px 12px!important;display:flex;align-items:center;gap:6px;white-space:nowrap;flex:none}
+  .dock .tab svg{width:17px;height:17px}
+  .dock .tlab{position:static;opacity:1;transform:none;padding:0;background:none;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;font-size:14px;color:inherit}
+  .dock .tab:hover .tlab,.dock .tab:focus-visible .tlab{transform:none}   /* на телефоне подпись не «прыгает» после нажатия */
+  .brand{font-size:22px}
+}
 </style>
 
 <nav class="nav">
   <div class="nav-in">
     <span class="nav-logo"><img src="logo.png" alt="Драфтер" onload="this.nextElementSibling.hidden=true" onerror="this.remove()"><span>Драфтер</span></span>
-    <div class="tabs" role="tablist">
-      <button class="tab on" data-mode="ai" role="tab">Тренировка</button>
-      <button class="tab" data-mode="manual" role="tab">Турнир</button>
-      <button class="tab" data-mode="allpick" role="tab">All Pick</button>
-      <button class="tab" data-mode="prep" role="tab">Наш пул</button>
-      <button class="tab" data-mode="review" role="tab">Разбор</button>
-      <button class="tab" data-mode="history" role="tab">История</button>
-    </div>
     <span class="nav-hint" id="navHint">драфт против компьютера</span>
     <button class="nav-btn" id="stratzNav">Подключить STRATZ</button>
   </div>
 </nav>
+<aside class="dock" aria-label="Разделы"><div class="tabs" role="tablist">
+  <button class="tab on" data-mode="ai" role="tab" aria-label="Тренировка"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg><span class="tlab">Тренировка</span></button>
+  <button class="tab" data-mode="manual" role="tab" aria-label="Турнир"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5.5a2.5 2.5 0 0 0 2.7 4"/><path d="M16 6h2.5a2.5 2.5 0 0 1-2.7 4"/><path d="M12 13v4"/><path d="M8.5 20h7"/><path d="M10 17h4"/></svg><span class="tlab">Турнир</span></button>
+  <button class="tab" data-mode="allpick" role="tab" aria-label="All Pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span class="tlab">All Pick</span></button>
+  <button class="tab" data-mode="prep" role="tab" aria-label="Наш пул"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6.2 6.5-6.2s6.5 2.6 6.5 6.2"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14c2.8.2 5 2.7 5 5.8"/></svg><span class="tlab">Наш пул</span></button>
+  <button class="tab" data-mode="review" role="tab" aria-label="Разбор"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span class="tlab">Разбор</span></button>
+  <button class="tab" data-mode="history" role="tab" aria-label="История"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/><path d="M12 7.5V12l3 2"/></svg><span class="tlab">История</span></button>
+</div></aside>
 <div class="wrap" id="appWrap">
   <div class="top">
-    <div class="brand">Драфтер<small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
+    <div class="brand"><span id="pageTitle">Тренировка</span><small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
     <div class="settings">
       <button class="btn" id="setToggle" aria-expanded="false">⚙ Настройки</button>
       <div class="field"><label for="setSide">Сторона</label>
@@ -1946,8 +2057,10 @@ function renderHistory(){
   }
 }
 function showView(v){
+  if(VIEW!==v){ const w=document.getElementById("appWrap"); if(w){ w.classList.remove("vt"); void w.offsetWidth; w.classList.add("vt") } }   // мягкое появление раздела
   VIEW=v;
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===v));
+  {const t=document.querySelector(`.tab[data-mode="${v}"] .tlab`), pt=$("#pageTitle"); if(t&&pt) pt.textContent=t.textContent}   // крупный заголовок раздела, как в примере
   {const at=document.querySelector(`.tab[data-mode="${v}"]`); const tb=at&&at.parentElement; if(tb&&tb.scrollWidth>tb.clientWidth) tb.scrollLeft=Math.max(0,at.offsetLeft-tb.clientWidth/2+at.offsetWidth/2)}
   const pages={history:$("#historyView"),prep:$("#prepView"),review:$("#reviewView")}, isPage=!!pages[v];
   document.body.classList.toggle("view-page",isPage);
