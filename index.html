@@ -551,26 +551,58 @@ select,input:not([type=checkbox]),textarea{border-radius:var(--r-md)!important;b
   .card,.team,.turn,.dside,.hitem,.tcard{border-radius:14px}
   #mbar{border-radius:18px 18px 0 0}
 }
+
+/* вертикальная панель разделов слева (на телефоне — полоса сверху) */
+body{padding-left:88px}
+.dock{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:25;padding:8px;border-radius:999px;
+  background:var(--sheen),rgba(30,38,50,.48);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border:1px solid var(--glass-line);border-top-color:var(--glass-top);box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.dock .tabs{flex-direction:column;gap:8px}
+.dock .tab{position:relative;width:46px;height:46px;padding:0!important;border-radius:50%;display:grid;place-items:center;color:#aab6c4;transition:background .2s,color .2s,transform .15s}
+.dock .tab svg{width:22px;height:22px}
+.dock .tab:hover{background:rgba(255,255,255,.10);color:#fff}
+.dock .tab.on{background:#fff!important;color:#0b0f15!important;box-shadow:0 4px 16px rgba(255,255,255,.18)}
+.dock .tlab{position:absolute;left:calc(100% + 14px);top:50%;transform:translate(-6px,-50%);opacity:0;pointer-events:none;white-space:nowrap;
+  padding:6px 14px;border-radius:999px;background:rgba(20,26,36,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--glass-line);
+  font-family:var(--f-disp);font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg);box-shadow:0 6px 20px rgba(0,0,0,.35);transition:opacity .15s,transform .15s}
+.dock .tab:hover .tlab,.dock .tab:focus-visible .tlab{opacity:1;transform:translate(0,-50%)}
+.nav-in{gap:8px 18px}
+.brand{font-size:30px}
+body.view-page .brand #pageTitle{display:none}   /* у страниц свой заголовок */
+body.view-page .brand small{margin-top:0}
+.nav-hint{font-size:14px}
+@media (max-width:720px){
+  body{padding-left:0}
+  .nav{display:none}
+  .dock{position:sticky;top:env(safe-area-inset-top,0px);left:auto;transform:none;margin:6px 6px 0;padding:4px;border-radius:999px;z-index:20}
+  .dock .tabs{flex-direction:row;gap:4px;overflow-x:auto;scrollbar-width:none}
+  .dock .tabs::-webkit-scrollbar{display:none}
+  .dock .tab{width:auto;height:auto;border-radius:999px;padding:7px 12px!important;display:flex;align-items:center;gap:6px;white-space:nowrap;flex:none}
+  .dock .tab svg{width:17px;height:17px}
+  .dock .tlab{position:static;opacity:1;transform:none;padding:0;background:none;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;font-size:14px;color:inherit}
+  .dock .tab:hover .tlab,.dock .tab:focus-visible .tlab{transform:none}   /* на телефоне подпись не «прыгает» после нажатия */
+  .brand{font-size:22px}
+}
 </style>
 
 <nav class="nav">
   <div class="nav-in">
     <span class="nav-logo"><img src="logo.png" alt="Драфтер" onload="this.nextElementSibling.hidden=true" onerror="this.remove()"><span>Драфтер</span></span>
-    <div class="tabs" role="tablist">
-      <button class="tab on" data-mode="ai" role="tab">Тренировка</button>
-      <button class="tab" data-mode="manual" role="tab">Турнир</button>
-      <button class="tab" data-mode="allpick" role="tab">All Pick</button>
-      <button class="tab" data-mode="prep" role="tab">Наш пул</button>
-      <button class="tab" data-mode="review" role="tab">Разбор</button>
-      <button class="tab" data-mode="history" role="tab">История</button>
-    </div>
     <span class="nav-hint" id="navHint">драфт против компьютера</span>
     <button class="nav-btn" id="stratzNav">Подключить STRATZ</button>
   </div>
 </nav>
+<aside class="dock" aria-label="Разделы"><div class="tabs" role="tablist">
+  <button class="tab on" data-mode="ai" role="tab" aria-label="Тренировка"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg><span class="tlab">Тренировка</span></button>
+  <button class="tab" data-mode="manual" role="tab" aria-label="Турнир"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5.5a2.5 2.5 0 0 0 2.7 4"/><path d="M16 6h2.5a2.5 2.5 0 0 1-2.7 4"/><path d="M12 13v4"/><path d="M8.5 20h7"/><path d="M10 17h4"/></svg><span class="tlab">Турнир</span></button>
+  <button class="tab" data-mode="allpick" role="tab" aria-label="All Pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span class="tlab">All Pick</span></button>
+  <button class="tab" data-mode="prep" role="tab" aria-label="Наш пул"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6.2 6.5-6.2s6.5 2.6 6.5 6.2"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14c2.8.2 5 2.7 5 5.8"/></svg><span class="tlab">Наш пул</span></button>
+  <button class="tab" data-mode="review" role="tab" aria-label="Разбор"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span class="tlab">Разбор</span></button>
+  <button class="tab" data-mode="history" role="tab" aria-label="История"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/><path d="M12 7.5V12l3 2"/></svg><span class="tlab">История</span></button>
+</div></aside>
 <div class="wrap" id="appWrap">
   <div class="top">
-    <div class="brand">Драфтер<small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
+    <div class="brand"><span id="pageTitle">Тренировка</span><small>Captains Mode · патч 7.41f · <span id="dataStatus">статистика не загружена</span> <button class="linkbtn" id="dataReload" hidden>обновить</button></small></div>
     <div class="settings">
       <button class="btn" id="setToggle" aria-expanded="false">⚙ Настройки</button>
       <div class="field"><label for="setSide">Сторона</label>
@@ -2028,6 +2060,7 @@ function showView(v){
   if(VIEW!==v){ const w=document.getElementById("appWrap"); if(w){ w.classList.remove("vt"); void w.offsetWidth; w.classList.add("vt") } }   // мягкое появление раздела
   VIEW=v;
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.mode===v));
+  {const t=document.querySelector(`.tab[data-mode="${v}"] .tlab`), pt=$("#pageTitle"); if(t&&pt) pt.textContent=t.textContent}   // крупный заголовок раздела, как в примере
   {const at=document.querySelector(`.tab[data-mode="${v}"]`); const tb=at&&at.parentElement; if(tb&&tb.scrollWidth>tb.clientWidth) tb.scrollLeft=Math.max(0,at.offsetLeft-tb.clientWidth/2+at.offsetWidth/2)}
   const pages={history:$("#historyView"),prep:$("#prepView"),review:$("#reviewView")}, isPage=!!pages[v];
   document.body.classList.toggle("view-page",isPage);
